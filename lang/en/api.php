@@ -11,6 +11,13 @@ return [
         'unauthenticated' => 'Authentication is required.',
     ],
 
+    'users' => [
+        'list_retrieved' => 'Users retrieved successfully.',
+        'created' => 'User created successfully.',
+        'updated' => 'User updated successfully.',
+        'last_active_admin' => 'The last active Admin cannot be disabled.',
+    ],
+
     'health' => [
         'ok' => 'The API is healthy.',
     ],

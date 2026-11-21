@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Lang;
@@ -25,4 +26,20 @@ Route::middleware('auth:sanctum')->group(static function (): void {
 
     Route::get('/me', [AuthController::class, 'me'])
         ->name('auth.me');
+
+    Route::prefix('admin/users')->name('admin.users.')->group(static function (): void {
+        Route::get('/', [AdminUserController::class, 'index'])
+            ->name('index');
+
+        Route::post('/', [AdminUserController::class, 'store'])
+            ->name('store');
+
+        Route::patch('/{user}', [AdminUserController::class, 'update'])
+            ->whereNumber('user')
+            ->name('update');
+
+        Route::patch('/{user}/disable', [AdminUserController::class, 'disable'])
+            ->whereNumber('user')
+            ->name('disable');
+    });
 });

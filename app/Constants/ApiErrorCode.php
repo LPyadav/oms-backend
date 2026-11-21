@@ -23,6 +23,8 @@ final class ApiErrorCode
 
     public const string METHOD_NOT_ALLOWED = 'METHOD_NOT_ALLOWED';
 
+    public const string LAST_ACTIVE_ADMIN = 'LAST_ACTIVE_ADMIN';
+
     public const string RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED';
 
     public const string REQUEST_FAILED = 'REQUEST_FAILED';
