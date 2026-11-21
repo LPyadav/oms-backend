@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Users;
 
 use App\Constants\ApiErrorCode;
+use App\Models\AccessAuditLog;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Lang;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -202,6 +204,88 @@ final class AdminUserManagementTest extends TestCase
             ->assertJsonPath('data.user.id', $admin->id);
     }
 
+    public function test_admin_can_replace_user_roles_and_audit_the_change(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $staff = Role::findByName('staff', 'web');
+        $manager = Role::findByName('manager', 'web');
+        $target = User::factory()->create()->assignRole($staff);
+        $endpoint = self::ENDPOINT.'/'.$target->id.'/roles';
+
+        $this->withToken($admin->createToken('Admin device')->plainTextToken)
+            ->patchJson($endpoint, ['roles' => ['manager']])
+            ->assertOk()
+            ->assertJsonPath('data.user.id', $target->id)
+            ->assertJsonPath('data.user.roles', ['manager']);
+
+        self::assertTrue($target->refresh()->hasExactRoles('manager'));
+
+        $this->patchJson($endpoint, ['roles' => ['manager']])->assertOk();
+
+        $audit = AccessAuditLog::query()->sole();
+
+        self::assertSame($admin->id, $audit->actor_id);
+        self::assertSame('user', $audit->target_type);
+        self::assertSame($target->id, $audit->target_id);
+        self::assertSame('user.roles.replaced', $audit->action);
+        self::assertSame([
+            'roles' => [['id' => $staff->id, 'name' => 'staff']],
+        ], $audit->before_values);
+        self::assertSame([
+            'roles' => [['id' => $manager->id, 'name' => 'manager']],
+        ], $audit->after_values);
+    }
+
+    public function test_admin_cannot_submit_a_json_object_as_roles(): void
+    {
+        $this->authenticateAs('admin');
+        $target = User::factory()->create()->assignRole('staff');
+
+        $this->patchJson(self::ENDPOINT.'/'.$target->id.'/roles', ['roles' => (object) []])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED)
+            ->assertJsonValidationErrors(['roles'], 'errors.fields');
+
+        self::assertTrue($target->refresh()->hasExactRoles('staff'));
+        $this->assertDatabaseCount('access_audit_logs', 0);
+    }
+
+    public function test_admin_can_clear_roles_with_an_empty_json_array(): void
+    {
+        $this->authenticateAs('admin');
+        $staff = Role::findByName('staff', 'web');
+        $target = User::factory()->create()->assignRole($staff);
+
+        $this->patchJson(self::ENDPOINT.'/'.$target->id.'/roles', ['roles' => []])
+            ->assertOk()
+            ->assertJsonPath('data.user.id', $target->id)
+            ->assertJsonPath('data.user.roles', []);
+
+        self::assertTrue($target->roles()->doesntExist());
+
+        $audit = AccessAuditLog::query()->sole();
+
+        self::assertSame([
+            'roles' => [['id' => $staff->id, 'name' => 'staff']],
+        ], $audit->before_values);
+        self::assertSame(['roles' => []], $audit->after_values);
+    }
+
+    public function test_last_active_admin_cannot_remove_their_admin_role(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        User::factory()->create(['is_active' => false])->assignRole('admin');
+
+        $this->withToken($admin->createToken('Admin device')->plainTextToken)
+            ->patchJson(self::ENDPOINT.'/'.$admin->id.'/roles', ['roles' => []])
+            ->assertConflict()
+            ->assertJsonPath('errors.code', ApiErrorCode::LAST_ACTIVE_ADMIN)
+            ->assertJsonPath('message', Lang::string('api.users.last_active_admin'));
+
+        self::assertTrue($admin->refresh()->hasExactRoles('admin'));
+        $this->assertDatabaseCount('access_audit_logs', 0);
+    }
+
     #[DataProvider('nonAdminRoles')]
     public function test_non_admins_cannot_manage_users(string $role): void
     {
@@ -259,6 +343,19 @@ final class AdminUserManagementTest extends TestCase
         $this->patchJson($endpoint.'/disable')
             ->assertStatus($status)
             ->assertJsonPath('errors.code', $errorCode);
+
+        $this->patchJson($endpoint.'/roles', ['roles' => ['admin']])
+            ->assertStatus($status)
+            ->assertJsonPath('errors.code', $errorCode);
+
+        $missingUserId = $target->id + 1;
+        $this->assertDatabaseMissing('users', ['id' => $missingUserId]);
+        $this->patchJson(self::ENDPOINT.'/'.$missingUserId.'/roles', ['roles' => ['admin']])
+            ->assertStatus($status)
+            ->assertJsonPath('errors.code', $errorCode);
+
+        self::assertTrue($target->roles()->doesntExist());
+        $this->assertDatabaseCount('access_audit_logs', 0);
 
         $this->assertDatabaseMissing('users', ['email' => 'blocked@example.test']);
         $this->assertDatabaseHas('users', [

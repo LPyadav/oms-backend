@@ -34,7 +34,7 @@ final class UserPolicy
         return $this->canManageUsers($actor);
     }
 
-    public function assignRoles(User $actor, User $target): bool
+    public function assignRoles(User $actor, ?User $target = null): bool
     {
         return $this->canManageUsers($actor)
             && $actor->checkPermissionTo('roles.manage');

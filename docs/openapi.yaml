@@ -276,6 +276,64 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/admin/users/{user}/roles:
+    patch:
+      tags: [Admin Users]
+      operationId: assignAdminUserRoles
+      summary: Replace a user's assigned roles
+      description: >-
+        Requires an active Admin with both the users.manage and roles.manage
+        permissions. Authorization runs before the target user is looked up.
+        Replaces the entire role set with the supplied role names. An empty list
+        clears all assigned roles when permitted. Each change records the acting
+        Admin, target user, and before and after role sets in the same transaction.
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: User ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignUserRolesRequest'
+            examples:
+              replace:
+                summary: Replace the user's roles
+                value:
+                  roles: [manager, staff]
+              clear:
+                summary: Clear all assigned roles
+                value:
+                  roles: []
+      responses:
+        '200':
+          description: The target user with their resulting roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/LastActiveAdminConflict'
+        '422':
+          description: The roles list in the request body is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -429,6 +487,16 @@ components:
         name: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
         email: { type: string, format: email, maxLength: 254 }
 
+    AssignUserRolesRequest:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+          description: Existing role names with exact spelling. An empty list clears all roles when permitted.
+
     AdminUser:
       type: object
       additionalProperties: false
@@ -577,7 +645,7 @@ components:
                       code: { const: RESOURCE_NOT_FOUND }
 
     LastActiveAdminConflict:
-      description: The target is the last active Admin and must remain active.
+      description: The operation would leave no active Admin.
       content:
         application/json:
           schema:
@@ -590,7 +658,7 @@ components:
                       fields: { maxProperties: 0 }
           example:
             success: false
-            message: The last active Admin cannot be disabled.
+            message: At least one active Admin must remain.
             data: null
             errors:
               code: LAST_ACTIVE_ADMIN

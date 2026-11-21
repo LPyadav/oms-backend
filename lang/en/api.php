@@ -15,7 +15,7 @@ return [
         'list_retrieved' => 'Users retrieved successfully.',
         'created' => 'User created successfully.',
         'updated' => 'User updated successfully.',
-        'last_active_admin' => 'The last active Admin cannot be disabled.',
+        'last_active_admin' => 'At least one active Admin must remain.',
     ],
 
     'health' => [

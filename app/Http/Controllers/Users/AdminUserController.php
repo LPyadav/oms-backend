@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Users;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Users\AssignUserRolesRequest;
 use App\Http\Requests\Users\DisableUserRequest;
 use App\Http\Requests\Users\ListUsersRequest;
 use App\Http\Requests\Users\StoreUserRequest;
@@ -12,7 +13,9 @@ use App\Http\Requests\Users\UpdateUserRequest;
 use App\Http\Responses\Users\AdminUserResponse;
 use App\Models\User;
 use App\Services\Users\UserManagementService;
+use App\Services\Users\UserRoleAssignmentService;
 use App\Services\Users\UserStatusService;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 
 final class AdminUserController extends Controller
@@ -54,5 +57,26 @@ final class AdminUserController extends Controller
         $disabled = $userStatusService->disable($user);
 
         return $this->adminUserResponse->update($disabled, $request);
+    }
+
+    public function assignRoles(
+        AssignUserRolesRequest $request,
+        string $user,
+        UserRoleAssignmentService $userRoleAssignmentService,
+    ): JsonResponse {
+        $actor = $request->user();
+
+        if (! $actor instanceof User) {
+            throw new AuthenticationException;
+        }
+
+        $target = User::query()->findOrFail($user);
+        $updated = $userRoleAssignmentService->replaceRoles(
+            actor: $actor,
+            target: $target,
+            roleNames: $request->roleNames(),
+        );
+
+        return $this->adminUserResponse->update($updated, $request);
     }
 }
