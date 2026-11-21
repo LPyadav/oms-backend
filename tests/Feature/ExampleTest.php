@@ -1,19 +1,29 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Lang;
 use Tests\TestCase;
 
-class ExampleTest extends TestCase
+final class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
     public function test_health_endpoint_returns_ok(): void
     {
+        Config::set('app.key', 'base64:'.base64_encode(str_repeat('t', 32)));
+
         $this->getJson('/api/health')
             ->assertOk()
-            ->assertExactJson(['status' => 'ok']);
+            ->assertExactJson([
+                'success' => true,
+                'message' => Lang::string('api.health.ok'),
+                'data' => [
+                    'status' => 'ok',
+                ],
+                'errors' => null,
+                'meta' => null,
+            ]);
     }
 }

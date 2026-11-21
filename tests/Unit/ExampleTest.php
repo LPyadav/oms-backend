@@ -2,15 +2,20 @@
 
 namespace Tests\Unit;
 
+use App\Http\Responses\ApiResponse;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Response;
 
-class ExampleTest extends TestCase
+final class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
-    public function test_that_true_is_true(): void
+    public function test_json_success_rejects_a_status_without_a_body(): void
     {
-        $this->assertTrue(true);
+        $this->expectException(InvalidArgumentException::class);
+
+        (new ApiResponse)->success(
+            message: 'Operation completed.',
+            status: Response::HTTP_NO_CONTENT,
+        );
     }
 }
