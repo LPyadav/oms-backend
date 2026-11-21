@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Services\Auth\LoginEmail;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Str;
 use LogicException;
 
 final class ApiRateLimitServiceProvider extends ServiceProvider
@@ -55,7 +55,7 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
             $limits[] = $this->limitFor(
                 'rate_limits.login.per_email',
                 'login-email',
-                Str::lower($email),
+                LoginEmail::normalize($email),
             );
         }
 

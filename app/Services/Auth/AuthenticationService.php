@@ -78,11 +78,13 @@ final readonly class AuthenticationService
     ): User {
         return $this->timebox->dontReturnEarly()->call(
             function (Timebox $timebox) use ($credentials): User {
+                $email = LoginEmail::normalize($credentials['email']);
+
                 $user = User::query()
-                    ->where('email', $credentials['email'])
+                    ->where('email', $email)
                     ->first();
 
-                if ($user === null) {
+                if ($user === null || LoginEmail::normalize($user->email) !== $email) {
                     // Keep one password hashing operation on the unknown-account path.
                     $this->hasher->make(Str::random());
 

@@ -8,6 +8,7 @@ use App\Constants\ApiErrorCode;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -199,6 +200,42 @@ final class LoginTest extends TestCase
             ->assertJsonPath('errors.code', ApiErrorCode::RATE_LIMIT_EXCEEDED);
 
         $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_mysql_rejects_an_email_that_only_matches_the_database_collation(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            self::markTestSkipped('This regression requires MySQL.');
+        }
+
+        $user = $this->createLoginUser();
+        $collationOnlyEmail = "r\u{00E9}viewer@example.test";
+
+        self::assertTrue(
+            User::query()
+                ->whereKey($user->id)
+                ->where('email', $collationOnlyEmail)
+                ->exists(),
+            'The MySQL fixture must match under the users.email collation.',
+        );
+
+        $this->postJson('/api/login', [
+            'email' => $collationOnlyEmail,
+            'password' => self::VALID_PASSWORD,
+        ])
+            ->assertUnauthorized()
+            ->assertJsonPath('errors.code', ApiErrorCode::AUTH_INVALID_CREDENTIALS);
+
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+
+        $this->postJson('/api/login', [
+            'email' => '  '.Str::upper($user->email).'  ',
+            'password' => self::VALID_PASSWORD,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.user.id', $user->id);
+
+        $this->assertDatabaseCount('personal_access_tokens', 1);
     }
 
     private function createLoginUser(): User

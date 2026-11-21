@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Auth;
 
+use App\Services\Auth\LoginEmail;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Str;
 
 final class LoginRequest extends FormRequest
 {
@@ -38,7 +38,7 @@ final class LoginRequest extends FormRequest
         $email = $body['email'] ?? null;
 
         if (is_string($email)) {
-            $body['email'] = Str::lower(trim($email));
+            $body['email'] = LoginEmail::normalize($email);
         }
 
         return $body;
