@@ -7,7 +7,11 @@ namespace Tests\Feature\Users;
 use App\Constants\ApiErrorCode;
 use App\Models\AccessAuditLog;
 use App\Models\User;
+use App\Policies\UserPolicy;
+use App\Services\Users\UserManagementService;
+use App\Services\Users\UserRoleAssignmentService;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
@@ -172,6 +176,55 @@ final class AdminUserManagementTest extends TestCase
         ])
             ->assertUnauthorized()
             ->assertJsonPath('errors.code', ApiErrorCode::AUTH_UNAUTHENTICATED);
+    }
+
+    public function test_admin_receives_not_found_for_a_missing_update_or_disable_target(): void
+    {
+        $this->authenticateAs('admin');
+        $endpoint = self::ENDPOINT.'/999999';
+
+        $this->patchJson($endpoint, ['name' => 'New name'])
+            ->assertNotFound()
+            ->assertJsonPath('errors.code', ApiErrorCode::RESOURCE_NOT_FOUND);
+
+        $this->patchJson($endpoint.'/disable')
+            ->assertNotFound()
+            ->assertJsonPath('errors.code', ApiErrorCode::RESOURCE_NOT_FOUND);
+    }
+
+    public function test_demoted_actor_cannot_create_or_update_users_with_stale_authorization(): void
+    {
+        $actor = User::factory()->create()->assignRole('admin')->refresh();
+        $otherAdmin = User::factory()->create()->assignRole('admin');
+        $target = User::factory()->create();
+
+        $policy = app(UserPolicy::class);
+        self::assertTrue($policy->create($actor));
+        self::assertTrue($policy->update($actor));
+
+        $demoted = app(UserRoleAssignmentService::class)->replaceRoles($otherAdmin, $actor, ['staff']);
+        self::assertTrue($demoted->hasExactRoles('staff'));
+
+        $service = app(UserManagementService::class);
+        $blockedEmail = 'blocked-write@example.test';
+
+        try {
+            $service->create($actor, 'Blocked user', $blockedEmail, 'Blocked fixture password');
+            self::fail('Expected the service to deny a demoted actor creating a user.');
+        } catch (AuthorizationException) {
+            $this->assertDatabaseMissing('users', ['email' => $blockedEmail]);
+        }
+
+        try {
+            $service->update($actor, $target->id, 'Blocked change', $blockedEmail);
+            self::fail('Expected the service to deny a demoted actor updating a user.');
+        } catch (AuthorizationException) {
+            $this->assertDatabaseHas('users', [
+                'id' => $target->id,
+                'name' => $target->name,
+                'email' => $target->email,
+            ]);
+        }
     }
 
     public function test_last_active_admin_cannot_disable_their_account(): void
@@ -350,7 +403,16 @@ final class AdminUserManagementTest extends TestCase
 
         $missingUserId = $target->id + 1;
         $this->assertDatabaseMissing('users', ['id' => $missingUserId]);
-        $this->patchJson(self::ENDPOINT.'/'.$missingUserId.'/roles', ['roles' => ['admin']])
+        $missingEndpoint = self::ENDPOINT.'/'.$missingUserId;
+        $this->patchJson($missingEndpoint, ['name' => 'Blocked edit'])
+            ->assertStatus($status)
+            ->assertJsonPath('errors.code', $errorCode);
+
+        $this->patchJson($missingEndpoint.'/disable')
+            ->assertStatus($status)
+            ->assertJsonPath('errors.code', $errorCode);
+
+        $this->patchJson($missingEndpoint.'/roles', ['roles' => ['admin']])
             ->assertStatus($status)
             ->assertJsonPath('errors.code', $errorCode);
 

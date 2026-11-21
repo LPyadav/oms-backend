@@ -6,12 +6,10 @@ namespace Tests\Feature\Users;
 
 use App\Models\User;
 use App\Services\Users\UserStatusService;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Spatie\Permission\Guard;
-use Spatie\Permission\Models\Role;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
@@ -23,7 +21,7 @@ final class ConcurrentUserDisableTest extends TestCase
     {
         $database = DB::connection();
 
-        if ($database->getDriverName() !== 'mysql') {
+        if (! defined('OMS_MYSQL_TEST_CONTEXT')) {
             self::markTestSkipped('This regression requires MySQL.');
         }
 
@@ -34,24 +32,22 @@ final class ConcurrentUserDisableTest extends TestCase
         );
         $schema = (string) $session->schema_name;
 
-        if (preg_match('/\Aomsauthverify(?:[a-f0-9]{12})?\z/', $schema) !== 1) {
-            self::markTestSkipped('Use the disposable omsauthverify MySQL schema.');
-        }
-
         self::assertSame(0, $database->transactionLevel());
         self::assertSame(0, Artisan::call('migrate', ['--force' => true]));
 
-        $adminRole = Role::query()->firstOrCreate([
-            'name' => 'admin',
-            'guard_name' => Guard::getDefaultName(User::class),
-        ]);
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $actor = User::factory()->create()->assignRole('admin');
         $user = User::factory()->create(['password' => self::PASSWORD]);
 
         $login = new Process(
             [PHP_BINARY, '-r', <<<'PHP'
-                require 'vendor/autoload.php';
+                require 'tests/bootstrap-mysql.php';
 
                 $app = require 'bootstrap/app.php';
+                if ($app->configurationIsCached()) {
+                    exit(2);
+                }
+
                 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
                 $database = $app->make('db')->connection();
                 $session = $database->selectOne(
@@ -83,7 +79,7 @@ final class ConcurrentUserDisableTest extends TestCase
             base_path(),
             [
                 'APP_ENV' => 'testing',
-                'APP_CONFIG_CACHE' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'oms-test-'.Str::uuid().'.php',
+                'APP_CONFIG_CACHE' => constant('OMS_MYSQL_TEST_CONTEXT')['config_cache'],
                 'DB_CONNECTION' => 'mysql',
                 'DB_URL' => '',
                 'DB_HOST' => (string) $database->getConfig('host'),
@@ -104,7 +100,7 @@ final class ConcurrentUserDisableTest extends TestCase
         try {
             $token = $user->createToken('Existing device');
             $database->beginTransaction();
-            app(UserStatusService::class)->disable($user);
+            app(UserStatusService::class)->disable($actor, $user->id);
 
             $login->start();
             $this->waitForLoginRowLock($login, $database, $schema, (int) $session->connection_id);
@@ -128,9 +124,7 @@ final class ConcurrentUserDisableTest extends TestCase
             $user->tokens()->delete();
             $user->delete();
 
-            if ($adminRole->wasRecentlyCreated) {
-                $adminRole->delete();
-            }
+            $actor->delete();
         }
     }
 

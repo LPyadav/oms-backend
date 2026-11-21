@@ -7,14 +7,13 @@ namespace Tests\Feature\Auth;
 use App\Constants\ApiErrorCode;
 use App\Models\User;
 use App\Services\Users\UserStatusService;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
-use Spatie\Permission\Guard;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 final class LoginTest extends TestCase
@@ -147,21 +146,22 @@ final class LoginTest extends TestCase
 
     public function test_login_does_not_issue_a_token_when_user_is_disabled_after_password_verification(): void
     {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $actor = User::factory()->create()->assignRole('admin');
         $user = $this->createLoginUser();
-        Role::findOrCreate('admin', Guard::getDefaultName($user));
         $user->createToken('Existing device');
 
         $realHasher = app(Hasher::class);
         $statusService = app(UserStatusService::class);
 
-        $this->mock(Hasher::class, static function (MockInterface $mock) use ($realHasher, $statusService, $user): void {
+        $this->mock(Hasher::class, static function (MockInterface $mock) use ($realHasher, $statusService, $actor, $user): void {
             $mock->shouldReceive('check')
                 ->once()
                 ->with(self::VALID_PASSWORD, $user->getAuthPassword())
                 ->andReturnUsing(
-                    static function (string $password, string $hash) use ($realHasher, $statusService, $user): bool {
+                    static function (string $password, string $hash) use ($realHasher, $statusService, $actor, $user): bool {
                         self::assertTrue($realHasher->check($password, $hash));
-                        $statusService->disable($user);
+                        $statusService->disable($actor, $user->id);
 
                         return true;
                     },
