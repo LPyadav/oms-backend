@@ -66,29 +66,14 @@ php artisan key:generate
 Keep local credentials and `APP_KEY` in `.env`. Commit `.env.example` as the
 template.
 
-### 3. Configure Sanctum and the dummy password hash
+### 3. Configure Sanctum
 
 `composer install` installs Sanctum from the lock file. The repository includes
 Sanctum's published `personal_access_tokens` migration, which runs with the
 application's other migrations.
 
-After setting the application's password hash driver and work factor, generate a
-dummy hash. Clear stale configuration first if it was cached locally.
-
-```powershell
-php artisan config:clear
-php artisan tinker --execute='echo \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(48)), PHP_EOL;'
-```
-
-Copy the output into `AUTH_LOGIN_DUMMY_PASSWORD_HASH` in `.env`, enclosed in
-single quotes to preserve any `$` characters. Generate a fresh dummy hash if the
-hash driver or work factor changes. The login service uses this hash when an
-email has no matching account so that failed logins still perform password
-verification. The dummy hash must be configured before testing login.
-
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
-| `AUTH_LOGIN_DUMMY_PASSWORD_HASH` | Empty | Dummy verification hash generated during setup |
 | `AUTH_TIMEBOX_DURATION_MICROSECONDS` | `200000` | Minimum duration for failed credential verification, in microseconds |
 | `AUTH_DEFAULT_TOKEN_NAME` | `OMS client` | Token label when the client omits `device_name` |
 | `SANCTUM_TOKEN_EXPIRATION_MINUTES` | `60` | Token lifetime in minutes |
@@ -137,6 +122,17 @@ revokes the token used for that request. Other device tokens can remain active.
 | `429` | `RATE_LIMIT_EXCEEDED` | Wait for the interval in `Retry-After` before retrying |
 
 Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
+
+### Authentication trade-off
+
+The original plan specified Sanctum session cookies and CSRF protection
+for the Vue app. This PR uses Sanctum Bearer tokens so the Vue app and
+future mobile clients can share the same login, logout, and user APIs.
+
+The proposed Vue implementation will hold the access token in memory.
+A full page reload requires signing in again. If a protected request
+returns `401`, Vue will clear the token, send the user to the login
+screen, and return them to the previous page after successful login.
 
 ## Verify the authentication flow
 

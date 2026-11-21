@@ -10,6 +10,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Illuminate\Support\Timebox;
 use Laravel\Sanctum\Contracts\HasAbilities;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -75,24 +76,20 @@ final readonly class AuthenticationService
     private function verifyCredentials(
         #[SensitiveParameter] array $credentials,
     ): User {
-        $dummyHash = $this->dummyPasswordHash();
-
         return $this->timebox->dontReturnEarly()->call(
-            function (Timebox $timebox) use ($credentials, $dummyHash): User {
+            function (Timebox $timebox) use ($credentials): User {
                 $user = User::query()
                     ->where('email', $credentials['email'])
                     ->first();
 
-                $passwordHash = $user === null
-                    ? $dummyHash
-                    : $user->getAuthPassword();
+                if ($user === null) {
+                    // Keep one password hashing operation on the unknown-account path.
+                    $this->hasher->make(Str::random());
 
-                $passwordMatches = $this->hasher->check(
-                    $credentials['password'],
-                    $passwordHash,
-                );
+                    throw new InvalidCredentialsException;
+                }
 
-                if ($user === null || ! $passwordMatches) {
+                if (! $this->hasher->check($credentials['password'], $user->getAuthPassword())) {
                     throw new InvalidCredentialsException;
                 }
 
@@ -102,18 +99,5 @@ final readonly class AuthenticationService
             },
             Config::integer('auth.timebox_duration', 200_000),
         );
-    }
-
-    private function dummyPasswordHash(): string
-    {
-        $hash = Config::string('authentication.login.dummy_password_hash', '');
-
-        if ($hash === '' || $this->hasher->needsRehash($hash)) {
-            throw new LogicException(
-                'The login dummy hash must match the configured password hashing settings.',
-            );
-        }
-
-        return $hash;
     }
 }

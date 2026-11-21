@@ -8,7 +8,6 @@ use App\Constants\ApiErrorCode;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -19,8 +18,6 @@ final class LoginTest extends TestCase
     private const string VALID_PASSWORD = 'valid-login-password';
 
     private const string WRONG_PASSWORD = 'incorrect-login-password';
-
-    private const string DUMMY_PASSWORD = 'dummy-password-for-tests';
 
     private const string DEFAULT_TOKEN_NAME = 'Test client';
 
@@ -37,7 +34,6 @@ final class LoginTest extends TestCase
         Config::set([
             'app.key' => 'base64:'.base64_encode(str_repeat('t', 32)),
             'auth.timebox_duration' => 0,
-            'authentication.login.dummy_password_hash' => Hash::make(self::DUMMY_PASSWORD),
             'authentication.tokens.default_name' => self::DEFAULT_TOKEN_NAME,
             'sanctum.expiration' => self::TOKEN_TTL_MINUTES,
             'rate_limits.api.per_ip' => 10,
@@ -46,8 +42,10 @@ final class LoginTest extends TestCase
         ]);
     }
 
-    public function test_login_issues_an_expiring_token_and_returns_the_public_user(): void
+    public function test_login_issues_an_expiring_token_without_a_configured_dummy_hash(): void
     {
+        Config::set('authentication.login.dummy_password_hash', '');
+
         $this->freezeSecond();
 
         $user = $this->createLoginUser();
@@ -111,7 +109,7 @@ final class LoginTest extends TestCase
 
         $unknownEmail = $this->postJson('/api/login', [
             'email' => 'unknown@example.test',
-            'password' => self::DUMMY_PASSWORD,
+            'password' => self::WRONG_PASSWORD,
         ])->assertUnauthorized();
 
         self::assertSame($wrongPassword->json(), $unknownEmail->json());
