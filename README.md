@@ -91,8 +91,14 @@ rebuild it on deployment. [Laravel configuration caching](https://laravel.com/do
 ```powershell
 php artisan migrate
 php artisan migrate:status
+php artisan db:seed --class=RolesAndPermissionsSeeder
+php artisan oms:create-demo-users --assign-existing
 php artisan serve --host=127.0.0.1 --port=8000
 ```
+
+The seeder installs the built-in Admin, Manager, and Staff roles and their
+permission definitions. The local demo command prints a generated password
+when it creates an account. Existing demo accounts keep their passwords.
 
 ## API endpoints
 
@@ -110,6 +116,8 @@ how the client should respond. Field validation messages appear in
 
 Login accepts `email`, `password`, and optional `device_name`. The `user` object
 contains `id`, `name`, and `email`. `expires_at` is a UTC ISO 8601 timestamp.
+`GET /api/me` also returns assigned `roles` and effective `permissions`
+inside `data.user`.
 Use the issued token in the `Authorization: Bearer <token>` header. Logout
 revokes the token used for that request. Other device tokens can remain active.
 [Laravel Sanctum API tokens](https://laravel.com/docs/13.x/sanctum#api-token-authentication)
@@ -122,6 +130,28 @@ revokes the token used for that request. Other device tokens can remain active.
 | `429` | `RATE_LIMIT_EXCEEDED` | Wait for the interval in `Retry-After` before retrying |
 
 Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
+
+### Admin user, role, and permission endpoints
+
+| Method | Endpoint | Operation |
+| --- | --- | --- |
+| GET | /api/admin/users | List users |
+| POST | /api/admin/users | Create a user |
+| PATCH | /api/admin/users/{user} | Update a user's profile |
+| PATCH | /api/admin/users/{user}/disable | Disable an account and revoke its tokens |
+| PATCH | /api/admin/users/{user}/roles | Replace a user's assigned roles |
+| GET | /api/admin/roles | List roles and their assigned permissions |
+| POST | /api/admin/roles | Create a custom role |
+| PATCH | /api/admin/roles/{role} | Rename a custom role |
+| PATCH | /api/admin/roles/{role}/permissions | Replace a custom role's assigned permissions |
+| GET | /api/admin/permissions | List the predefined permission names |
+
+These endpoints require an active Admin and a valid Bearer token. User
+management requires `users.manage`. Role and permission management requires
+`roles.manage`, and replacing a user's roles requires both grants.
+The built-in roles are protected from renaming and permission changes.
+The [OpenAPI contract](docs/openapi.yaml) describes request bodies, pagination,
+and the shared response schemas.
 
 ### Authentication trade-off
 
@@ -204,9 +234,18 @@ IP.
 ## Development checks
 
 ```powershell
-php vendor/bin/pint --test
-php artisan test
+composer check
 ```
 
-PHPUnit uses SQLite in memory. Use `php artisan migrate:status` to check the local
-MySQL schema separately.
+The default test suite uses SQLite in memory. Run the MySQL regression
+profile separately from the repository root.
+
+```powershell
+php tests/run-mysql.php
+```
+
+The launcher provisions a new disposable schema and a schema-specific account
+on `127.0.0.1`, runs PHPUnit, and removes both after the run. The provisioning
+connection defaults to port `3306`, user `root`, and an empty password. Override
+these through the process environment variables `OMS_MYSQL_PORT`,
+`OMS_MYSQL_ADMIN_USER`, and `OMS_MYSQL_ADMIN_PASSWORD`.

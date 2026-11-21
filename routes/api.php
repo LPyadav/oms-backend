@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -46,4 +47,23 @@ Route::middleware('auth:sanctum')->group(static function (): void {
             ->whereNumber('user')
             ->name('roles.update');
     });
+
+    Route::prefix('admin/roles')->name('admin.roles.')->group(static function (): void {
+        Route::get('/', [AdminRoleController::class, 'index'])
+            ->name('index');
+
+        Route::post('/', [AdminRoleController::class, 'store'])
+            ->name('store');
+
+        Route::patch('/{role}', [AdminRoleController::class, 'update'])
+            ->whereNumber('role')
+            ->name('update');
+
+        Route::patch('/{role}/permissions', [AdminRoleController::class, 'assignPermissions'])
+            ->whereNumber('role')
+            ->name('permissions.update');
+    });
+
+    Route::get('/admin/permissions', [AdminRoleController::class, 'permissions'])
+        ->name('admin.permissions.index');
 });

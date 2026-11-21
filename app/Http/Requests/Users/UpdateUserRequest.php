@@ -13,11 +13,8 @@ final class UpdateUserRequest extends FormRequest
     public function authorize(): bool
     {
         $actor = $this->user();
-        $target = $this->route('user');
 
-        return $actor instanceof User
-            && $target instanceof User
-            && $actor->can('update', $target);
+        return $actor instanceof User && $actor->can('update', User::class);
     }
 
     /**

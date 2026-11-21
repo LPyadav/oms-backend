@@ -12,11 +12,8 @@ final class DisableUserRequest extends FormRequest
     public function authorize(): bool
     {
         $actor = $this->user();
-        $target = $this->route('user');
 
-        return $actor instanceof User
-            && $target instanceof User
-            && $actor->can('changeStatus', $target);
+        return $actor instanceof User && $actor->can('changeStatus', User::class);
     }
 
     /**

@@ -24,12 +24,12 @@ final class UserPolicy
         return $this->canManageUsers($actor);
     }
 
-    public function update(User $actor, User $target): bool
+    public function update(User $actor, ?User $target = null): bool
     {
         return $this->canManageUsers($actor);
     }
 
-    public function changeStatus(User $actor, User $target): bool
+    public function changeStatus(User $actor, ?User $target = null): bool
     {
         return $this->canManageUsers($actor);
     }

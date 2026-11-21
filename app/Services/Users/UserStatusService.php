@@ -6,37 +6,30 @@ namespace App\Services\Users;
 
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Models\User;
+use App\Policies\UserPolicy;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
-use LogicException;
 use RuntimeException;
-use Spatie\Permission\Guard;
-use Spatie\Permission\Models\Role;
 
-final class UserStatusService
+final readonly class UserStatusService
 {
-    public function disable(User $user): User
+    public function __construct(
+        private UserPolicy $userPolicy,
+        private AdminUserWriteLock $writeLock,
+    ) {}
+
+    public function disable(User $actor, int|string $userId): User
     {
-        return DB::transaction(static function () use ($user): User {
-            $adminRoleName = 'admin';
-            $guardName = Guard::getDefaultName(User::class);
+        return DB::transaction(function () use ($actor, $userId): User {
+            ['adminRole' => $adminRole, 'actor' => $lockedActor] = $this->writeLock->acquire($actor);
 
-            $adminRole = Role::query()
-                ->where('name', $adminRoleName)
-                ->where('guard_name', $guardName)
-                ->lockForUpdate()
-                ->first();
-
-            if (
-                $adminRole === null
-                || $adminRole->name !== $adminRoleName
-                || $adminRole->guard_name !== $guardName
-            ) {
-                throw new LogicException('The Admin role must be seeded before changing account status.');
+            if (! $this->userPolicy->changeStatus($lockedActor)) {
+                throw new AuthorizationException;
             }
 
             $target = User::query()
                 ->lockForUpdate()
-                ->findOrFail($user->id);
+                ->findOrFail($userId);
 
             if ($target->is_active && $target->hasRole($adminRole)) {
                 $anotherAdmin = User::query()

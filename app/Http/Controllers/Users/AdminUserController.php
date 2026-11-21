@@ -17,6 +17,7 @@ use App\Services\Users\UserRoleAssignmentService;
 use App\Services\Users\UserStatusService;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 final class AdminUserController extends Controller
 {
@@ -37,24 +38,24 @@ final class AdminUserController extends Controller
 
     public function store(StoreUserRequest $request): JsonResponse
     {
-        $user = $this->userManagementService->create(...$request->userData());
+        $user = $this->userManagementService->create($this->actor($request), ...$request->userData());
 
         return $this->adminUserResponse->create($user, $request);
     }
 
-    public function update(UpdateUserRequest $request, User $user): JsonResponse
+    public function update(UpdateUserRequest $request, string $user): JsonResponse
     {
-        $updated = $this->userManagementService->update($user, ...$request->userData());
+        $updated = $this->userManagementService->update($this->actor($request), $user, ...$request->userData());
 
         return $this->adminUserResponse->update($updated, $request);
     }
 
     public function disable(
         DisableUserRequest $request,
-        User $user,
+        string $user,
         UserStatusService $userStatusService,
     ): JsonResponse {
-        $disabled = $userStatusService->disable($user);
+        $disabled = $userStatusService->disable($this->actor($request), $user);
 
         return $this->adminUserResponse->update($disabled, $request);
     }
@@ -64,12 +65,7 @@ final class AdminUserController extends Controller
         string $user,
         UserRoleAssignmentService $userRoleAssignmentService,
     ): JsonResponse {
-        $actor = $request->user();
-
-        if (! $actor instanceof User) {
-            throw new AuthenticationException;
-        }
-
+        $actor = $this->actor($request);
         $target = User::query()->findOrFail($user);
         $updated = $userRoleAssignmentService->replaceRoles(
             actor: $actor,
@@ -78,5 +74,16 @@ final class AdminUserController extends Controller
         );
 
         return $this->adminUserResponse->update($updated, $request);
+    }
+
+    private function actor(Request $request): User
+    {
+        $actor = $request->user();
+
+        if (! $actor instanceof User) {
+            throw new AuthenticationException;
+        }
+
+        return $actor;
     }
 }

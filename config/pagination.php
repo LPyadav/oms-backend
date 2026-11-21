@@ -19,18 +19,29 @@ $positiveInteger = static function (string $variable, int $default): int {
     return $number;
 };
 
-$defaultPerPage = $positiveInteger('PAGINATION_USERS_DEFAULT_PER_PAGE', 25);
-$maxPerPage = $positiveInteger('PAGINATION_USERS_MAX_PER_PAGE', 100);
+$pagination = static function (string $defaultVariable, string $maxVariable) use ($positiveInteger): array {
+    $defaultPerPage = $positiveInteger($defaultVariable, 25);
+    $maxPerPage = $positiveInteger($maxVariable, 100);
 
-if ($defaultPerPage > $maxPerPage) {
-    throw new InvalidArgumentException(
-        '[PAGINATION_USERS_DEFAULT_PER_PAGE] must not exceed [PAGINATION_USERS_MAX_PER_PAGE].',
-    );
-}
+    if ($defaultPerPage > $maxPerPage) {
+        throw new InvalidArgumentException(
+            "[{$defaultVariable}] must not exceed [{$maxVariable}].",
+        );
+    }
 
-return [
-    'users' => [
+    return [
         'default_per_page' => $defaultPerPage,
         'max_per_page' => $maxPerPage,
-    ],
+    ];
+};
+
+return [
+    'users' => $pagination(
+        'PAGINATION_USERS_DEFAULT_PER_PAGE',
+        'PAGINATION_USERS_MAX_PER_PAGE',
+    ),
+    'roles' => $pagination(
+        'PAGINATION_ROLES_DEFAULT_PER_PAGE',
+        'PAGINATION_ROLES_MAX_PER_PAGE',
+    ),
 ];

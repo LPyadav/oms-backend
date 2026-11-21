@@ -7,10 +7,12 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Contracts\Permission;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'password'])]
@@ -26,6 +28,15 @@ class User extends Authenticatable
     use Notifiable;
 
     protected string $guard_name = 'web';
+
+    protected function hasPermissionViaRole(Permission $permission): bool
+    {
+        // Authorization reads the current pivots even if Spatie's cached role grants are stale.
+        return $this->roles()
+            ->whereHas('permissions', static fn (Builder $query): Builder => $query->whereKey($permission->getKey()))
+            ->useWritePdo()
+            ->exists();
+    }
 
     /**
      * @return array<string, string>

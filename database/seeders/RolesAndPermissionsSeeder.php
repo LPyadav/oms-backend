@@ -59,7 +59,7 @@ final class RolesAndPermissionsSeeder extends Seeder
             $permissionsByName = [];
 
             foreach ($rolePermissions as $roleName => $permissionNames) {
-                $role = Role::query()->firstOrCreate([
+                $role = Role::query()->lockForUpdate()->firstOrCreate([
                     'name' => $roleName,
                     'guard_name' => $guardName,
                 ]);
@@ -75,9 +75,7 @@ final class RolesAndPermissionsSeeder extends Seeder
                     $permissions[] = $permissionsByName[$permissionName];
                 }
 
-                if ($role->wasRecentlyCreated) {
-                    $role->givePermissionTo($permissions);
-                }
+                $role->givePermissionTo($permissions);
             }
         });
 

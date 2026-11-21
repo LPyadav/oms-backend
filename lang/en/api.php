@@ -18,6 +18,17 @@ return [
         'last_active_admin' => 'At least one active Admin must remain.',
     ],
 
+    'roles' => [
+        'list_retrieved' => 'Roles retrieved successfully.',
+        'created' => 'Role created successfully.',
+        'updated' => 'Role updated successfully.',
+        'permissions_updated' => 'Role permissions updated successfully.',
+    ],
+
+    'permissions' => [
+        'list_retrieved' => 'Permissions retrieved successfully.',
+    ],
+
     'health' => [
         'ok' => 'The API is healthy.',
     ],
