@@ -1,8 +1,26 @@
 <?php
 
+declare(strict_types=1);
+
 use App\Models\User;
 
+$timeboxValue = env('AUTH_TIMEBOX_DURATION_MICROSECONDS', 200_000);
+
+$timeboxDuration = is_int($timeboxValue) || is_string($timeboxValue)
+    ? filter_var($timeboxValue, FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 1],
+    ])
+    : false;
+
+if ($timeboxDuration === false) {
+    throw new InvalidArgumentException(
+        'Environment variable [AUTH_TIMEBOX_DURATION_MICROSECONDS] must be a positive integer.',
+    );
+}
+
 return [
+
+    'timebox_duration' => $timeboxDuration,
 
     /*
     |--------------------------------------------------------------------------
