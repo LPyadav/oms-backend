@@ -40,11 +40,15 @@ final class AuthController extends Controller
 
     public function me(
         Request $request,
+        AuthenticationService $authenticationService,
         AuthenticationResponse $authenticationResponse,
     ): JsonResponse {
+        $user = $this->authenticatedUser($request);
+
         return $authenticationResponse->currentUser(
-            $this->authenticatedUser($request),
-            $request,
+            user: $user,
+            request: $request,
+            authorization: $authenticationService->currentUserAuthorization($user),
         );
     }
 

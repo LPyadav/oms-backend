@@ -6,10 +6,15 @@ namespace Tests\Feature\Auth;
 
 use App\Constants\ApiErrorCode;
 use App\Models\User;
+use App\Services\Users\UserStatusService;
+use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Mockery\MockInterface;
+use Spatie\Permission\Guard;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 final class LoginTest extends TestCase
@@ -115,6 +120,62 @@ final class LoginTest extends TestCase
 
         self::assertSame($wrongPassword->json(), $unknownEmail->json());
 
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_inactive_user_cannot_log_in_with_the_correct_password(): void
+    {
+        $user = $this->createLoginUser();
+        $user->is_active = false;
+        $user->saveOrFail();
+
+        $inactive = $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => self::VALID_PASSWORD,
+        ])
+            ->assertUnauthorized()
+            ->assertJsonPath('errors.code', ApiErrorCode::AUTH_INVALID_CREDENTIALS);
+
+        $unknown = $this->postJson('/api/login', [
+            'email' => 'unknown@example.test',
+            'password' => self::VALID_PASSWORD,
+        ])->assertUnauthorized();
+
+        self::assertSame($unknown->json(), $inactive->json());
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_login_does_not_issue_a_token_when_user_is_disabled_after_password_verification(): void
+    {
+        $user = $this->createLoginUser();
+        Role::findOrCreate('admin', Guard::getDefaultName($user));
+        $user->createToken('Existing device');
+
+        $realHasher = app(Hasher::class);
+        $statusService = app(UserStatusService::class);
+
+        $this->mock(Hasher::class, static function (MockInterface $mock) use ($realHasher, $statusService, $user): void {
+            $mock->shouldReceive('check')
+                ->once()
+                ->with(self::VALID_PASSWORD, $user->getAuthPassword())
+                ->andReturnUsing(
+                    static function (string $password, string $hash) use ($realHasher, $statusService, $user): bool {
+                        self::assertTrue($realHasher->check($password, $hash));
+                        $statusService->disable($user);
+
+                        return true;
+                    },
+                );
+        });
+
+        $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => self::VALID_PASSWORD,
+        ])
+            ->assertUnauthorized()
+            ->assertJsonPath('errors.code', ApiErrorCode::AUTH_INVALID_CREDENTIALS);
+
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'is_active' => false]);
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 

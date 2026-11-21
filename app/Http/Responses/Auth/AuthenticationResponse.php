@@ -36,12 +36,18 @@ final readonly class AuthenticationResponse
         );
     }
 
-    public function currentUser(User $user, Request $request): JsonResponse
-    {
+    /**
+     * @param  array{roles: list<string>, permissions: list<string>}|null  $authorization
+     */
+    public function currentUser(
+        User $user,
+        Request $request,
+        ?array $authorization = null,
+    ): JsonResponse {
         return $this->apiResponse->success(
             message: Lang::string('api.auth.current_user_retrieved'),
             data: [
-                'user' => (new UserResource($user))->resolve($request),
+                'user' => (new UserResource($user, authorization: $authorization))->resolve($request),
             ],
         );
     }
