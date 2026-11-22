@@ -49,6 +49,17 @@ final readonly class AdminUserResponse
         );
     }
 
+    /**
+     * @param  array{user_id: int, direct_permissions: list<string>, inherited_permissions: list<string>}  $permissions
+     */
+    public function permissions(array $permissions, bool $updated = false): JsonResponse
+    {
+        return $this->apiResponse->success(
+            message: Lang::string($updated ? 'api.users.permissions_updated' : 'api.users.permissions_retrieved'),
+            data: $permissions,
+        );
+    }
+
     public function update(User $user, Request $request): JsonResponse
     {
         return $this->apiResponse->success(

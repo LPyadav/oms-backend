@@ -16,6 +16,8 @@ return [
         'created' => 'User created successfully.',
         'updated' => 'User updated successfully.',
         'last_active_admin' => 'At least one active Admin must remain.',
+        'permissions_retrieved' => 'User permissions retrieved successfully.',
+        'permissions_updated' => 'Direct user permissions updated successfully.',
     ],
 
     'customers' => [

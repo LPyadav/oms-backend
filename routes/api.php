@@ -86,6 +86,14 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::patch('/{user}/roles', [AdminUserController::class, 'assignRoles'])
             ->whereNumber('user')
             ->name('roles.update');
+
+        Route::get('/{user}/permissions', [AdminUserController::class, 'showPermissions'])
+            ->whereNumber('user')
+            ->name('permissions.show');
+
+        Route::patch('/{user}/permissions', [AdminUserController::class, 'assignPermissions'])
+            ->whereNumber('user')
+            ->name('permissions.update');
     });
 
     Route::prefix('admin/roles')->name('admin.roles.')->group(static function (): void {
