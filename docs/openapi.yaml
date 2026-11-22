@@ -4,7 +4,7 @@ info:
   title: OMS Backend API
   version: '0.1.0'
   description: |
-    Order Management System health and authentication endpoints.
+    Order Management System health, authentication, and Admin user, role, and permission management endpoints.
 
     All registered API routes share a default limit of 120 requests per
     minute per client IP. Requests rejected for missing or invalid
@@ -88,7 +88,7 @@ paths:
       summary: Get the authenticated user
       responses:
         '200':
-          description: Current user's public profile.
+          description: Current user's public profile, roles, and effective permissions.
           content:
             application/json:
               schema:
@@ -120,12 +120,549 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/admin/users:
+    get:
+      tags: [Admin Users]
+      operationId: listAdminUsers
+      summary: List users
+      description: Requires an active Admin with the users.manage permission. Users are ordered by ID.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: One-based page number.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >
+            Deployment defaults are 25 users per page and a maximum of 100.
+            Configured through PAGINATION_USERS_DEFAULT_PER_PAGE and PAGINATION_USERS_MAX_PER_PAGE.
+      responses:
+        '200':
+          description: A page of users and its pagination metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: One or more pagination query parameters failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Admin Users]
+      operationId: createAdminUser
+      summary: Create a user
+      description: Requires an active Admin with the users.manage permission. New users are active with empty role lists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreUserRequest'
+      responses:
+        '201':
+          description: The user was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DuplicateUserEmail'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/users/{user}:
+    patch:
+      tags: [Admin Users]
+      operationId: updateAdminUser
+      summary: Update a user's profile
+      description: >
+        Requires an active Admin with the users.manage permission.
+        Authorization is checked before the target user is looked up.
+        Updates only the profile fields supplied in the body.
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: User ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: The user's profile was updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/DuplicateUserEmail'
+        '422':
+          description: One or more profile fields in the body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/users/{user}/disable:
+    patch:
+      tags: [Admin Users]
+      operationId: disableAdminUser
+      summary: Disable a user account
+      description: >
+        Requires an active Admin with the users.manage permission.
+        Authorization is checked before the target user is looked up.
+        Disables the account and revokes all of the user's existing Bearer tokens.
+        A status change and its audit event are saved in the same transaction.
+        The request body can be omitted.
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: User ID.
+      responses:
+        '200':
+          description: The account was disabled and its tokens were revoked.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/AdminUserResponse'
+                  - properties:
+                      data:
+                        properties:
+                          user:
+                            properties:
+                              is_active: { const: false }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/LastActiveAdminConflict'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/users/{user}/enable:
+    patch:
+      tags: [Admin Users]
+      operationId: enableAdminUser
+      summary: Reactivate a user account
+      description: >-
+        Requires an active Admin with the users.manage permission.
+        Reactivation preserves assigned roles and revokes any tokens still attached
+        to the disabled account. The user signs in again to get a new token.
+        The status and its audit event are saved together. An already active
+        account is returned unchanged. The request body can be omitted.
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: User ID.
+      responses:
+        '200':
+          description: The active user account.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/AdminUserResponse'
+                  - properties:
+                      data:
+                        properties:
+                          user:
+                            properties:
+                              is_active: { const: true }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/users/{user}/roles:
+    patch:
+      tags: [Admin Users]
+      operationId: assignAdminUserRoles
+      summary: Replace a user's assigned roles
+      description: >-
+        Requires an active Admin with both the users.manage and roles.manage
+        permissions. Authorization runs before the target user is looked up.
+        Replaces the entire role set with the supplied role names. An empty list
+        clears all assigned roles when permitted. Each change records the acting
+        Admin, target user, and before and after role sets in the same transaction.
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: User ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignUserRolesRequest'
+            examples:
+              replace:
+                summary: Replace the user's roles
+                value:
+                  roles: [manager, staff]
+              clear:
+                summary: Clear all assigned roles
+                value:
+                  roles: []
+      responses:
+        '200':
+          description: The target user with their resulting roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/LastActiveAdminConflict'
+        '422':
+          description: The roles list in the request body is missing or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/users/{user}/permissions:
+    parameters:
+      - name: user
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+        description: User ID.
+    get:
+      tags: [Admin Users]
+      operationId: showAdminUserPermissions
+      summary: Get a user's direct and inherited permissions
+      description: Requires an active Admin with both the users.manage and roles.manage permissions.
+      responses:
+        '200':
+          description: The target user's direct and role-inherited permission keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserPermissionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Admin Users]
+      operationId: assignAdminUserPermissions
+      summary: Replace a user's direct permissions
+      description: >-
+        Requires an active Admin with both the users.manage and roles.manage
+        permissions. An empty list clears all direct grants. Role-inherited
+        permissions remain effective. Each change is audited in the same
+        transaction and repeating the same set creates no additional entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignUserPermissionsRequest'
+            examples:
+              replace:
+                summary: Replace direct grants
+                value:
+                  direct_permissions: [products.view]
+              clear:
+                summary: Clear direct grants
+                value:
+                  direct_permissions: []
+      responses:
+        '200':
+          description: The target user's resulting direct and inherited permission keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserPermissionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/roles:
+    get:
+      tags: [Admin Roles]
+      operationId: listAdminRoles
+      summary: List roles
+      description: Requires an active Admin with the roles.manage permission. Roles in the application's guard are ordered by ID.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: One-based page number.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >-
+            Deployment defaults are 25 roles per page and a maximum of 100.
+            Configured through PAGINATION_ROLES_DEFAULT_PER_PAGE and PAGINATION_ROLES_MAX_PER_PAGE.
+      responses:
+        '200':
+          description: A page of roles with their permissions and pagination metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: One or more pagination query parameters failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Admin Roles]
+      operationId: createAdminRole
+      summary: Create a custom role
+      description: >-
+        Requires an active Admin with the roles.manage permission.
+        A new role starts with no permissions. The creation is audited in the same transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleNameRequest'
+      responses:
+        '201':
+          description: The custom role was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DuplicateRoleName'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/roles/{role}:
+    parameters:
+      - $ref: '#/components/parameters/AdminRoleId'
+    patch:
+      tags: [Admin Roles]
+      operationId: renameAdminRole
+      summary: Rename a custom role
+      description: >-
+        Requires an active Admin with the roles.manage permission.
+        Authorization runs before the target role is looked up.
+        Renaming preserves permissions and user assignments and records the old and new names in the same transaction.
+        Submitting the current name leaves the role and its audit history unchanged.
+        The built-in admin, manager, and staff roles are protected from renaming.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleNameRequest'
+      responses:
+        '200':
+          description: The role with its current name and permissions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/DuplicateRoleName'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/roles/{role}/permissions:
+    parameters:
+      - $ref: '#/components/parameters/AdminRoleId'
+    patch:
+      tags: [Admin Roles]
+      operationId: replaceAdminRolePermissions
+      summary: Replace a role's selected permissions
+      description: >-
+        Requires an active Admin with the roles.manage permission.
+        Authorization runs before the target role is looked up.
+        Replaces the complete checked set for the Manager, Staff, or a custom role.
+        Omitted grants are removed from the role. An empty array clears its grants.
+        Each change records the acting Admin, role, and before and after permissions
+        in the same transaction. Saving the current set leaves the audit history
+        unchanged. The built-in Admin role's grants are protected.
+        Existing Admin-only grants on editable roles may be kept or removed.
+        Adding a new Admin-only grant to an editable role returns 422.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRolePermissionsRequest'
+            examples:
+              replace:
+                summary: Replace the role's permissions
+                value:
+                  permissions: [orders.create, orders.assign]
+              clear:
+                summary: Clear the role's permissions
+                value:
+                  permissions: []
+      responses:
+        '200':
+          description: The role with its resulting permissions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          description: The permissions list is missing, malformed, contains invalid names, or adds an Admin-only grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/permissions:
+    get:
+      tags: [Admin Roles]
+      operationId: listAdminPermissions
+      summary: List the permission catalog
+      description: >-
+        Requires an active Admin with the roles.manage permission.
+        Returns all permission names for the application's guard.
+        Use each role's permissions array to determine the checked options.
+        Admin-only keys are identified for display on editable roles.
+      responses:
+        '200':
+          description: The permission catalog and its Admin-only subset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPermissionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       description: Send the opaque Sanctum access token returned by login in the Authorization header.
+
+  parameters:
+    AdminRoleId:
+      name: role
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+      description: Role ID.
 
   schemas:
     LoginRequest:
@@ -165,7 +702,7 @@ components:
         message: { type: string }
         data: { type: [object, array, 'null'] }
         errors: { type: [object, 'null'] }
-        meta: { type: 'null' }
+        meta: { type: [object, 'null'] }
 
     SuccessEnvelope:
       allOf:
@@ -178,6 +715,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'
         - properties:
+            meta: { type: 'null' }
             data:
               type: object
               additionalProperties: false
@@ -189,6 +727,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'
         - properties:
+            meta: { type: 'null' }
             data:
               type: object
               additionalProperties: false
@@ -205,7 +744,240 @@ components:
                 user:
                   $ref: '#/components/schemas/PublicUser'
 
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, roles, permissions]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        email: { type: string, format: email }
+        roles:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+          description: Sorted role names. Empty when no roles are assigned.
+        permissions:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+          description: >
+            Sorted effective permission names from assigned roles and direct grants.
+            Empty when the user has no grants.
+
     CurrentUserResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            meta: { type: 'null' }
+            data:
+              type: object
+              additionalProperties: false
+              required: [user]
+              properties:
+                user:
+                  $ref: '#/components/schemas/CurrentUser'
+
+    LogoutResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            meta: { type: 'null' }
+            data: { type: 'null' }
+
+    StoreUserRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        email: { type: string, format: email, maxLength: 254 }
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 8
+          maxLength: 1024
+          description: >
+            Passwords containing null bytes fail validation. With bcrypt, the
+            maximum is 72 bytes or the lower positive BCRYPT_LIMIT, if configured.
+
+    UpdateUserRequest:
+      type: object
+      anyOf:
+        - required: [name]
+        - required: [email]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        email: { type: string, format: email, maxLength: 254 }
+
+    AssignUserRolesRequest:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+          description: Existing role names with exact spelling. An empty list clears all roles when permitted.
+
+    AssignUserPermissionsRequest:
+      type: object
+      required: [direct_permissions]
+      properties:
+        direct_permissions:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+          description: Existing permission keys with exact spelling. An empty list clears direct grants.
+      not:
+        required: [inherited_permissions]
+
+    AdminUserPermissionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            meta: { type: 'null' }
+            data:
+              type: object
+              required: [user_id, direct_permissions, inherited_permissions]
+              properties:
+                user_id: { type: integer, format: int64, minimum: 1 }
+                direct_permissions:
+                  type: array
+                  uniqueItems: true
+                  items: { type: string }
+                  description: Grants assigned directly to the user.
+                inherited_permissions:
+                  type: array
+                  readOnly: true
+                  uniqueItems: true
+                  items: { type: string }
+                  description: Grants from the user's current roles. A key can appear in both lists.
+
+    RoleNameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '\S'
+          description: A custom role name. The names admin, manager, and staff are reserved regardless of case.
+
+    AssignRolePermissionsRequest:
+      type: object
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+          description: Existing permission names with exact spelling. An empty array clears all permissions.
+
+    AdminRole:
+      type: object
+      additionalProperties: false
+      required: [id, name, permissions]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        permissions:
+          $ref: '#/components/schemas/PermissionNames'
+
+    PermissionNames:
+      type: array
+      uniqueItems: true
+      items: { type: string }
+      description: Sorted permission names.
+
+    AdminRoleListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminRole'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    AdminRoleResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties:
+                role:
+                  $ref: '#/components/schemas/AdminRole'
+            meta: { type: 'null' }
+
+    AdminPermissionListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [permissions, admin_only_permissions]
+              properties:
+                permissions:
+                  $ref: '#/components/schemas/PermissionNames'
+                admin_only_permissions:
+                  $ref: '#/components/schemas/PermissionNames'
+                  description: Subset of the catalog reserved for the built-in Admin role.
+            meta: { type: 'null' }
+
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, is_active, roles]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        email: { type: string, format: email }
+        is_active: { type: boolean }
+        roles:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+          description: Sorted role names. Empty when the user has no roles.
+
+    PaginationMeta:
+      type: object
+      additionalProperties: false
+      required: [current_page, per_page, total, last_page]
+      properties:
+        current_page: { type: integer, minimum: 1 }
+        per_page: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        last_page: { type: integer, minimum: 1 }
+
+    AdminUserListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [users]
+              properties:
+                users:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminUser'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    AdminUserResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'
         - properties:
@@ -215,18 +987,14 @@ components:
               required: [user]
               properties:
                 user:
-                  $ref: '#/components/schemas/PublicUser'
-
-    LogoutResponse:
-      allOf:
-        - $ref: '#/components/schemas/SuccessEnvelope'
-        - properties:
-            data: { type: 'null' }
+                  $ref: '#/components/schemas/AdminUser'
+            meta: { type: 'null' }
 
     ErrorEnvelope:
       allOf:
         - $ref: '#/components/schemas/ApiEnvelope'
         - properties:
+            meta: { type: 'null' }
             success: { const: false }
             data: { type: 'null' }
             errors:
@@ -243,6 +1011,7 @@ components:
                     - ACCESS_FORBIDDEN
                     - RESOURCE_NOT_FOUND
                     - METHOD_NOT_ALLOWED
+                    - LAST_ACTIVE_ADMIN
                     - RATE_LIMIT_EXCEEDED
                     - REQUEST_FAILED
                     - INTERNAL_SERVER_ERROR
@@ -252,6 +1021,14 @@ components:
                   additionalProperties:
                     type: array
                     items: { type: string }
+
+    ValidationErrorEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+        - properties:
+            errors:
+              properties:
+                code: { const: VALIDATION_FAILED }
 
   responses:
     InvalidCredentials:
@@ -282,8 +1059,8 @@ components:
                     properties:
                       code: { const: AUTH_UNAUTHENTICATED }
 
-    ValidationFailed:
-      description: One or more request body fields failed validation.
+    Forbidden:
+      description: The authenticated user is not permitted to perform this operation.
       content:
         application/json:
           schema:
@@ -292,7 +1069,73 @@ components:
               - properties:
                   errors:
                     properties:
-                      code: { const: VALIDATION_FAILED }
+                      code: { const: ACCESS_FORBIDDEN }
+
+    ResourceNotFound:
+      description: The requested resource could not be found.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      code: { const: RESOURCE_NOT_FOUND }
+
+    LastActiveAdminConflict:
+      description: The operation would leave no active Admin.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      code: { const: LAST_ACTIVE_ADMIN }
+                      fields: { maxProperties: 0 }
+          example:
+            success: false
+            message: At least one active Admin must remain.
+            data: null
+            errors:
+              code: LAST_ACTIVE_ADMIN
+              fields: {}
+            meta: null
+
+    DuplicateUserEmail:
+      description: Another user already has the submitted email address.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ValidationErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      fields:
+                        required: [email]
+
+    DuplicateRoleName:
+      description: A role already has the submitted name.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ValidationErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      fields:
+                        required: [name]
+
+    ValidationFailed:
+      description: One or more request body fields failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorEnvelope'
           example:
             success: false
             message: The submitted data is invalid.

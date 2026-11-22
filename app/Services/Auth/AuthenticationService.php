@@ -10,12 +10,16 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Timebox;
 use Laravel\Sanctum\Contracts\HasAbilities;
 use Laravel\Sanctum\PersonalAccessToken;
 use LogicException;
 use SensitiveParameter;
+use Spatie\Permission\Guard;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 final readonly class AuthenticationService
 {
@@ -43,18 +47,62 @@ final readonly class AuthenticationService
         $tokenName = $deviceName
             ?? Config::string('authentication.tokens.default_name');
 
-        $user = $this->verifyCredentials($credentials);
-        $expiresAt = now()->toImmutable()->addMinutes($expirationMinutes);
+        $verifiedUser = $this->verifyCredentials($credentials);
 
-        $token = $user->createToken(
-            name: $tokenName,
-            expiresAt: $expiresAt,
-        );
+        return DB::transaction(static function () use ($verifiedUser, $tokenName, $expirationMinutes): array {
+            $user = User::query()
+                ->lockForUpdate()
+                ->find($verifiedUser->id);
+
+            if (
+                $user === null
+                || ! $user->is_active
+                || $user->getAuthPassword() !== $verifiedUser->getAuthPassword()
+                || LoginEmail::normalize($user->email) !== LoginEmail::normalize($verifiedUser->email)
+            ) {
+                throw new InvalidCredentialsException;
+            }
+
+            $expiresAt = now()->toImmutable()->addMinutes($expirationMinutes);
+
+            $token = $user->createToken(
+                name: $tokenName,
+                expiresAt: $expiresAt,
+            );
+
+            return [
+                'user' => $user,
+                'access_token' => $token->plainTextToken,
+                'expires_at' => $expiresAt,
+            ];
+        });
+    }
+
+    /**
+     * @return array{roles: list<string>, permissions: list<string>}
+     */
+    public function currentUserAuthorization(User $user): array
+    {
+        $user->load(['roles.permissions', 'permissions']);
+
+        $guardName = Guard::getDefaultName($user);
+
+        $roles = $user->roles
+            ->whereInstanceOf(Role::class)
+            ->whereStrict('guard_name', $guardName)
+            ->map(static fn (Role $role): string => $role->name)
+            ->sort(SORT_STRING);
+
+        $permissions = $user->getAllPermissions()
+            ->whereInstanceOf(Permission::class)
+            ->whereStrict('guard_name', $guardName)
+            ->map(static fn (Permission $permission): string => $permission->name)
+            ->uniqueStrict()
+            ->sort(SORT_STRING);
 
         return [
-            'user' => $user,
-            'access_token' => $token->plainTextToken,
-            'expires_at' => $expiresAt,
+            'roles' => array_values($roles->all()),
+            'permissions' => array_values($permissions->all()),
         ];
     }
 
@@ -91,7 +139,12 @@ final readonly class AuthenticationService
                     throw new InvalidCredentialsException;
                 }
 
-                if (! $this->hasher->check($credentials['password'], $user->getAuthPassword())) {
+                $passwordMatches = $this->hasher->check(
+                    $credentials['password'],
+                    $user->getAuthPassword(),
+                );
+
+                if (! $passwordMatches || ! $user->is_active) {
                     throw new InvalidCredentialsException;
                 }
 

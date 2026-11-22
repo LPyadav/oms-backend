@@ -6,6 +6,7 @@ namespace App\Exceptions;
 
 use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
+use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
@@ -41,6 +42,7 @@ final readonly class ApiExceptionRenderer
         $status = match (true) {
             $exception instanceof InvalidCredentialsException,
             $exception instanceof AuthenticationException => Response::HTTP_UNAUTHORIZED,
+            $exception instanceof LastActiveAdminException => Response::HTTP_CONFLICT,
             $exception instanceof ValidationException && ! $response->isClientError() => Response::HTTP_UNPROCESSABLE_ENTITY,
             default => $response->getStatusCode(),
         };
@@ -53,6 +55,10 @@ final readonly class ApiExceptionRenderer
             $exception instanceof InvalidCredentialsException => [
                 ApiErrorCode::AUTH_INVALID_CREDENTIALS,
                 'api.auth.invalid_credentials',
+            ],
+            $exception instanceof LastActiveAdminException => [
+                ApiErrorCode::LAST_ACTIVE_ADMIN,
+                'api.users.last_active_admin',
             ],
             $exception instanceof ValidationException => [
                 ApiErrorCode::VALIDATION_FAILED,
