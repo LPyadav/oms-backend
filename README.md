@@ -185,6 +185,17 @@ non-empty list of distinct product IDs and positive quantities to create a
 draft. Optional fields include priority, an active assignee, an initial
 note, and fixed item and order discounts.
 
+Send one `Idempotency-Key` header with each new `POST /api/orders` request.
+Use a fresh value such as a UUID for each order and reuse the original key
+and payload for retries. Keys are scoped to the authenticated user.
+
+The first request and authorized replays return `201` with the same order ID
+and `Location`. A replay returns the current order details and checks
+current permissions. A changed valid payload with the same key returns
+`409 ORDER_IDEMPOTENCY_CONFLICT`. A replay after soft deletion returns
+`404`, and the key stays bound to the original order. A rolled-back attempt
+leaves the key available for retry.
+
 The server snapshots the product name, SKU, price, and applicable tax rate.
 All pricing values use integer minor units in the configured two-decimal
 business currency. For example, 2000 USD minor units represent $20.00.

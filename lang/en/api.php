@@ -35,6 +35,8 @@ return [
         'list_retrieved' => 'Orders retrieved successfully.',
         'retrieved' => 'Order retrieved successfully.',
         'created' => 'Order created successfully.',
+        'idempotency_key_invalid' => 'Provide one Idempotency-Key header of 1 to 128 characters using letters, numbers, dots, underscores, tildes, or hyphens.',
+        'idempotency_conflict' => 'This idempotency key has already been used with a different order request.',
         'updated' => 'Order updated successfully.',
         'deleted' => 'Order deleted successfully.',
         'pricing_previewed' => 'Order pricing calculated successfully.',

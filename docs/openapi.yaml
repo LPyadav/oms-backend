@@ -898,7 +898,22 @@ paths:
       summary: Create a draft order
       description: >-
         Requires orders.view.any and orders.create. Supplying a non-null assignee or note also requires its respective permission.
-        The server snapshots active catalog products, derives all amounts, and saves the draft, lines, optional note, and audit atomically.
+        The server snapshots active catalog products, derives all amounts, and saves the draft, lines, optional note, audit,
+        and idempotency record atomically. The key is scoped to the authenticated user and stays bound to the original order.
+        A retry with the same key and equivalent validated payload returns the current order details after the required permissions
+        are checked again. Object field order does not affect equivalence. Omitted optional fields use their defaults and item order matters.
+        A rolled-back creation leaves the key available for retry.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Send exactly one unique key for each new order and reuse it for retries of that order.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: '^[A-Za-z0-9._~-]{1,128}$'
+          example: 798b73b5-f7a5-4d6a-875d-644cbbe34312
       requestBody:
         required: true
         content:
@@ -907,10 +922,10 @@ paths:
               $ref: '#/components/schemas/CreateOrderRequest'
       responses:
         '201':
-          description: Create a draft order.
+          description: Created a draft order or returned the current details of the same order for an authorized replay.
           headers:
             Location:
-              description: Relative URL of the created order.
+              description: The same relative order URL on the initial response and on replay.
               schema: { type: string }
           content:
             application/json:
@@ -920,8 +935,16 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/OrderIdempotencyConflict'
         '422':
-          $ref: '#/components/responses/ValidationFailed'
+          description: The JSON body or Idempotency-Key header failed validation. Header errors use errors.fields.idempotency_key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
         '429':
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
@@ -2260,6 +2283,7 @@ components:
                     - RESOURCE_NOT_FOUND
                     - METHOD_NOT_ALLOWED
                     - LAST_ACTIVE_ADMIN
+                    - ORDER_IDEMPOTENCY_CONFLICT
                     - RATE_LIMIT_EXCEEDED
                     - REQUEST_FAILED
                     - WRITE_CONTENTION
@@ -2424,6 +2448,26 @@ components:
                     properties:
                       fields:
                         required: [name]
+
+    OrderIdempotencyConflict:
+      description: The caller already used this Idempotency-Key with a different validated order creation payload.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      code: { const: ORDER_IDEMPOTENCY_CONFLICT }
+          example:
+            success: false
+            message: This idempotency key has already been used with a different order request.
+            data: null
+            errors:
+              code: ORDER_IDEMPOTENCY_CONFLICT
+              fields: {}
+            meta: null
 
     OrderVersionConflict:
       description: The supplied expected_version differs from the current saved order version.

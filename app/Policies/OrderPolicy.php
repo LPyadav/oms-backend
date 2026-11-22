@@ -9,6 +9,12 @@ use Spatie\Permission\Guard;
 
 final class OrderPolicy
 {
+    private const string VIEW_ALL = 'orders.view.any';
+
+    private const string ASSIGN = 'orders.assign';
+
+    private const string ADD_ANY_NOTE = 'orders.notes.create.any';
+
     public function viewAny(User $actor): bool
     {
         return $this->viewAll($actor) || $this->hasPermission($actor, 'orders.view.assigned');
@@ -16,12 +22,24 @@ final class OrderPolicy
 
     public function viewAll(User $actor): bool
     {
-        return $this->hasPermission($actor, 'orders.view.any');
+        return $this->hasPermission($actor, self::VIEW_ALL);
     }
 
-    public function create(User $actor): bool
+    public function create(User $actor, bool $withAssignment = false, bool $withNote = false): bool
     {
-        return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.create');
+        if (! $actor->is_active) {
+            return false;
+        }
+
+        // Read grants from the actor loaded under the write lock for create and replay.
+        $permissions = $actor->getAllPermissions()
+            ->whereStrict('guard_name', Guard::getDefaultName($actor))
+            ->pluck('name');
+
+        return $permissions->containsStrict(self::VIEW_ALL)
+            && $permissions->containsStrict('orders.create')
+            && (! $withAssignment || $permissions->containsStrict(self::ASSIGN))
+            && (! $withNote || $permissions->containsStrict(self::ADD_ANY_NOTE));
     }
 
     public function update(User $actor): bool
@@ -38,12 +56,7 @@ final class OrderPolicy
 
     public function assign(User $actor): bool
     {
-        return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.assign');
-    }
-
-    public function addInitialNote(User $actor): bool
-    {
-        return $this->addAnyNote($actor);
+        return $this->viewAll($actor) && $this->hasPermission($actor, self::ASSIGN);
     }
 
     public function addNote(User $actor): bool
@@ -55,7 +68,7 @@ final class OrderPolicy
 
     public function addAnyNote(User $actor): bool
     {
-        return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.notes.create.any');
+        return $this->viewAll($actor) && $this->hasPermission($actor, self::ADD_ANY_NOTE);
     }
 
     public function changeStatus(User $actor): bool

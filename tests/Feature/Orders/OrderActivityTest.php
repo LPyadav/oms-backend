@@ -48,7 +48,7 @@ final class OrderActivityTest extends TestCase
             'order_date' => '2026-11-22',
             'assignee_id' => $previous->id,
             'items' => [['product_id' => $product->id, 'quantity' => 1]],
-        ])->assertCreated()
+        ], ['Idempotency-Key' => 'order-activity-test'])->assertCreated()
             ->assertJsonCount(1, 'data.order.assignment_history')
             ->assertJsonPath('data.order.assignment_history.0.previous_assignee_id', null)
             ->assertJsonPath('data.order.assignment_history.0.new_assignee_id', $previous->id);

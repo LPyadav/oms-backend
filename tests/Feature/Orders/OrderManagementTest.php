@@ -34,6 +34,8 @@ final class OrderManagementTest extends TestCase
             'orders.currency' => 'USD',
         ]);
 
+        $this->withHeader('Idempotency-Key', 'order-management-test');
+
     }
 
     public function test_manager_creates_an_assigned_draft_with_a_note_and_server_calculated_totals(): void

@@ -6,9 +6,11 @@ namespace App\Services\Orders;
 
 use App\Enums\OrderPriority;
 use App\Enums\OrderStatus;
+use App\Exceptions\Orders\OrderIdempotencyConflictException;
 use App\Exceptions\Orders\OrderVersionConflictException;
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\OrderCreationKey;
 use App\Models\OrderItem;
 use App\Models\OrderNote;
 use App\Models\Product;
@@ -131,13 +133,26 @@ final readonly class OrderService
     /**
      * @param  CreateOrderData  $data
      */
-    public function create(User $actor, array $data): Order
+    public function create(User $actor, array $data, string $idempotencyKey): Order
     {
         $this->authorizeCreation($actor, $data);
 
-        return DB::transaction(function () use ($actor, $data): Order {
+        $keyHash = hash('sha256', $idempotencyKey);
+        $requestHash = $this->creationRequestHash($data);
+
+        return DB::transaction(function () use ($actor, $data, $keyHash, $requestHash): Order {
             $lockedActor = $this->writeLock->acquireShared($actor);
+            $creationKey = $this->lockCreationKey($lockedActor, $keyHash, $requestHash);
             $this->authorizeCreation($lockedActor, $data);
+
+            if ($creationKey->request_hash !== $requestHash) {
+                throw new OrderIdempotencyConflictException;
+            }
+
+            if ($creationKey->order_id !== null) {
+                return Order::query()->with(self::DETAIL_RELATIONS)->findOrFail($creationKey->order_id);
+            }
+
             $assigneeId = $data['assignee_id'] ?? null;
             $note = $data['note'] ?? null;
 
@@ -183,6 +198,11 @@ final readonly class OrderService
                     ['assignee_id' => null],
                     ['assignee_id' => $assigneeId],
                 );
+            }
+
+            $creationKey->order_id = $order->id;
+            if (! $creationKey->save()) {
+                throw new RuntimeException('The order creation result could not be recorded.');
             }
 
             return $order->loadMissing(self::DETAIL_RELATIONS);
@@ -311,13 +331,45 @@ final readonly class OrderService
      */
     private function authorizeCreation(User $actor, array $data): void
     {
-        if (
-            ! $this->policy->create($actor)
-            || (isset($data['assignee_id']) && ! $this->policy->assign($actor))
-            || (isset($data['note']) && ! $this->policy->addInitialNote($actor))
-        ) {
+        if (! $this->policy->create($actor, withAssignment: isset($data['assignee_id']), withNote: isset($data['note']))) {
             throw new AuthorizationException;
         }
+    }
+
+    private function lockCreationKey(User $actor, string $keyHash, string $requestHash): OrderCreationKey
+    {
+        // Serialize same-key requests before any consistent read establishes the MySQL snapshot.
+        OrderCreationKey::query()->upsert([
+            'actor_id' => $actor->id,
+            'key_hash' => $keyHash,
+            'request_hash' => $requestHash,
+            'created_at' => now(),
+        ], ['actor_id', 'key_hash'], ['key_hash']);
+
+        return OrderCreationKey::query()
+            ->where('actor_id', $actor->id)
+            ->where('key_hash', $keyHash)
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    /** @param CreateOrderData $data */
+    private function creationRequestHash(array $data): string
+    {
+        // Preserve line order because it determines the stored item positions.
+        return hash('sha256', json_encode([
+            'customer_id' => $data['customer_id'],
+            'order_date' => $data['order_date'],
+            'priority' => $data['priority'] ?? OrderPriority::Normal->value,
+            'assignee_id' => $data['assignee_id'] ?? null,
+            'note' => $data['note'] ?? null,
+            'order_discount_minor' => $data['order_discount_minor'] ?? 0,
+            'items' => array_map(static fn (array $item): array => [
+                'product_id' => $item['product_id'],
+                'quantity' => $item['quantity'],
+                'item_discount_minor' => $item['item_discount_minor'] ?? 0,
+            ], $data['items']),
+        ], JSON_THROW_ON_ERROR));
     }
 
     private function activeCustomer(int $customerId): Customer

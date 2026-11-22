@@ -60,7 +60,11 @@ final class OrderController extends Controller
 
     public function store(StoreOrderRequest $request): JsonResponse
     {
-        $order = $this->orderService->create($this->actor($request), $request->orderData());
+        $order = $this->orderService->create(
+            $this->actor($request),
+            $request->orderData(),
+            $request->idempotencyKey(),
+        );
 
         return $this->orderResponse->create($order, $request);
     }

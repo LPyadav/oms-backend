@@ -9,6 +9,7 @@ use App\Exceptions\Auth\InvalidCredentialsException;
 use App\Exceptions\Catalog\CatalogWriteContentionException;
 use App\Exceptions\Inventory\StockVersionConflictException;
 use App\Exceptions\Orders\OrderActivityContentionException;
+use App\Exceptions\Orders\OrderIdempotencyConflictException;
 use App\Exceptions\Orders\OrderLifecycleContentionException;
 use App\Exceptions\Orders\OrderVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
@@ -74,6 +75,7 @@ final readonly class ApiExceptionRenderer
             $exception instanceof InvalidCredentialsException,
             $exception instanceof AuthenticationException => Response::HTTP_UNAUTHORIZED,
             $exception instanceof LastActiveAdminException,
+            $exception instanceof OrderIdempotencyConflictException,
             $exception instanceof OrderVersionConflictException,
             $exception instanceof StockVersionConflictException => Response::HTTP_CONFLICT,
             $exception instanceof ValidationException && ! $response->isClientError() => Response::HTTP_UNPROCESSABLE_ENTITY,
@@ -92,6 +94,10 @@ final readonly class ApiExceptionRenderer
             $exception instanceof LastActiveAdminException => [
                 ApiErrorCode::LAST_ACTIVE_ADMIN,
                 'api.users.last_active_admin',
+            ],
+            $exception instanceof OrderIdempotencyConflictException => [
+                ApiErrorCode::ORDER_IDEMPOTENCY_CONFLICT,
+                'api.orders.idempotency_conflict',
             ],
             $exception instanceof OrderVersionConflictException => [
                 ApiErrorCode::ORDER_VERSION_CONFLICT,

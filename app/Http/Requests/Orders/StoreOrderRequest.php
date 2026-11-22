@@ -7,11 +7,16 @@ namespace App\Http\Requests\Orders;
 use App\Enums\OrderPriority;
 use App\Services\Orders\OrderService;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Validation\Rules\Enum;
+use Illuminate\Validation\Validator;
+use LogicException;
 
 /** @phpstan-import-type CreateOrderData from OrderService */
 final class StoreOrderRequest extends OrderWriteRequest
 {
+    private const string IDEMPOTENCY_HEADER = 'Idempotency-Key';
+
     public function authorize(): bool
     {
         return $this->actorCan('create');
@@ -31,6 +36,29 @@ final class StoreOrderRequest extends OrderWriteRequest
             'order_discount_minor' => $this->discountRules(),
             ...$this->itemRules(required: true),
         ];
+    }
+
+    /**
+     * @return list<callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            ...parent::after(),
+            function (Validator $validator): void {
+                $values = $this->headers->all(self::IDEMPOTENCY_HEADER);
+                $key = $values[0] ?? null;
+                if (count($values) !== 1 || $key === null || preg_match('/\A[A-Za-z0-9._~-]{1,128}\z/', $key) !== 1) {
+                    $validator->errors()->add('idempotency_key', Lang::string('api.orders.idempotency_key_invalid'));
+                }
+            },
+        ];
+    }
+
+    public function idempotencyKey(): string
+    {
+        return $this->headers->get(self::IDEMPOTENCY_HEADER)
+            ?? throw new LogicException('Order creation requires a validated idempotency key.');
     }
 
     /**

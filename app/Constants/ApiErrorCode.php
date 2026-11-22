@@ -27,6 +27,8 @@ final class ApiErrorCode
 
     public const string ORDER_VERSION_CONFLICT = 'ORDER_VERSION_CONFLICT';
 
+    public const string ORDER_IDEMPOTENCY_CONFLICT = 'ORDER_IDEMPOTENCY_CONFLICT';
+
     public const string RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED';
 
     public const string REQUEST_FAILED = 'REQUEST_FAILED';
