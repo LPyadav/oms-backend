@@ -10,15 +10,19 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
+ * @property string $sku
  * @property string $price
  * @property string $tax_rate
  * @property int $stock_quantity
+ * @property int $stock_version
  */
-#[Fillable(['sku', 'name', 'price', 'tax_rate', 'stock_quantity', 'is_active'])]
+#[Fillable(['sku', 'name', 'price', 'tax_rate', 'is_active'])]
 final class Product extends Model
 {
     /** @use HasFactory<ProductFactory> */
     use HasFactory;
+
+    public const int MAX_STOCK_QUANTITY = 2147483647;
 
     /**
      * @return array<string, string>

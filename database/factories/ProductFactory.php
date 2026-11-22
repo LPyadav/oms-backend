@@ -22,7 +22,7 @@ final class ProductFactory extends Factory
             'name' => fake()->words(3, true),
             'price' => fake()->randomElement(['25.00', '49.50', '99.95']),
             'tax_rate' => fake()->randomElement(['0.00', '5.00', '18.00']),
-            'stock_quantity' => fake()->numberBetween(10, 250),
+            'stock_quantity' => 0,
             'is_active' => true,
         ];
     }

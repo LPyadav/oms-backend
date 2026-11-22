@@ -48,4 +48,8 @@ return [
         'PAGINATION_CUSTOMERS_DEFAULT_PER_PAGE',
         'PAGINATION_CUSTOMERS_MAX_PER_PAGE',
     ),
+    'products' => $pagination(
+        'PAGINATION_PRODUCTS_DEFAULT_PER_PAGE',
+        'PAGINATION_PRODUCTS_MAX_PER_PAGE',
+    ),
 ];

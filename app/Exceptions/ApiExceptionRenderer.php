@@ -6,6 +6,7 @@ namespace App\Exceptions;
 
 use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
+use App\Exceptions\Inventory\StockVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
@@ -42,7 +43,8 @@ final readonly class ApiExceptionRenderer
         $status = match (true) {
             $exception instanceof InvalidCredentialsException,
             $exception instanceof AuthenticationException => Response::HTTP_UNAUTHORIZED,
-            $exception instanceof LastActiveAdminException => Response::HTTP_CONFLICT,
+            $exception instanceof LastActiveAdminException,
+            $exception instanceof StockVersionConflictException => Response::HTTP_CONFLICT,
             $exception instanceof ValidationException && ! $response->isClientError() => Response::HTTP_UNPROCESSABLE_ENTITY,
             default => $response->getStatusCode(),
         };
@@ -60,6 +62,7 @@ final readonly class ApiExceptionRenderer
                 ApiErrorCode::LAST_ACTIVE_ADMIN,
                 'api.users.last_active_admin',
             ],
+            $exception instanceof StockVersionConflictException,
             $exception instanceof ValidationException => [
                 ApiErrorCode::VALIDATION_FAILED,
                 'api.errors.validation_failed',
@@ -77,10 +80,17 @@ final readonly class ApiExceptionRenderer
             message: Lang::string($messageKey),
             code: $code,
             status: $status,
-            fields: $exception instanceof ValidationException
-                ? $exception->errors()
-                : [],
+            fields: match (true) {
+                $exception instanceof StockVersionConflictException => [
+                    'expected_stock_version' => [Lang::string('api.products.stock_version_conflict')],
+                ],
+                $exception instanceof ValidationException => $exception->errors(),
+                default => [],
+            },
             headers: $headers,
+            meta: $exception instanceof StockVersionConflictException
+                ? ['stock_version' => $exception->currentStockVersion]
+                : null,
         );
     }
 

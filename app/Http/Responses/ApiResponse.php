@@ -50,6 +50,7 @@ final class ApiResponse
      * @param  ApiErrorCode::*  $code
      * @param  array<string, list<string>>  $fields
      * @param  array<string, string|int|list<string>>  $headers
+     * @param  array<string, mixed>|null  $meta
      */
     public function error(
         string $message,
@@ -57,6 +58,7 @@ final class ApiResponse
         int $status,
         array $fields = [],
         array $headers = [],
+        ?array $meta = null,
     ): JsonResponse {
         if ($status < Response::HTTP_BAD_REQUEST || $status > 599) {
             throw new InvalidArgumentException(
@@ -72,7 +74,7 @@ final class ApiResponse
                 'code' => $code,
                 'fields' => (object) $fields,
             ],
-            meta: null,
+            meta: $meta,
             status: $status,
             headers: $headers,
         );

@@ -10,6 +10,9 @@
     <testsuites>
         <testsuite name="MySQL regressions">
             <file>tests/Feature/Auth/LoginTest.php</file>
+            <file>tests/Feature/Customers/CustomerManagementTest.php</file>
+            <file>tests/Feature/Products/ProductInventoryTest.php</file>
+            <file>tests/Feature/Products/ProductManagementTest.php</file>
             <file>tests/Feature/Roles/AdminRoleManagementTest.php</file>
             <file>tests/Feature/Roles/RolesAndPermissionsSeederTest.php</file>
             <file>tests/Feature/Users/AdminUserManagementTest.php</file>
