@@ -139,6 +139,7 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | POST | /api/admin/users | Create a user |
 | PATCH | /api/admin/users/{user} | Update a user's profile |
 | PATCH | /api/admin/users/{user}/disable | Disable an account and revoke its tokens |
+| PATCH | /api/admin/users/{user}/enable | Reactivate an account so the user can sign in again |
 | PATCH | /api/admin/users/{user}/roles | Replace a user's assigned roles |
 | GET | /api/admin/roles | List roles and their assigned permissions |
 | POST | /api/admin/roles | Create a custom role |
@@ -150,6 +151,9 @@ These endpoints require an active Admin and a valid Bearer token. User
 management requires `users.manage`. Role and permission management requires
 `roles.manage`, and replacing a user's roles requires both grants.
 The built-in roles are protected from renaming and permission changes.
+The enable and disable requests take no body. On reactivation the user keeps
+their roles and must sign in for a new Bearer token.
+
 The [OpenAPI contract](docs/openapi.yaml) describes request bodies, pagination,
 and the shared response schemas.
 

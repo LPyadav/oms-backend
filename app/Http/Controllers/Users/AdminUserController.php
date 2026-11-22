@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Users;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Users\AssignUserRolesRequest;
 use App\Http\Requests\Users\DisableUserRequest;
+use App\Http\Requests\Users\EnableUserRequest;
 use App\Http\Requests\Users\ListUsersRequest;
 use App\Http\Requests\Users\StoreUserRequest;
 use App\Http\Requests\Users\UpdateUserRequest;
@@ -58,6 +59,16 @@ final class AdminUserController extends Controller
         $disabled = $userStatusService->disable($this->actor($request), $user);
 
         return $this->adminUserResponse->update($disabled, $request);
+    }
+
+    public function enable(
+        EnableUserRequest $request,
+        string $user,
+        UserStatusService $userStatusService,
+    ): JsonResponse {
+        $enabled = $userStatusService->enable($this->actor($request), $user);
+
+        return $this->adminUserResponse->enable($enabled, $request);
     }
 
     public function assignRoles(

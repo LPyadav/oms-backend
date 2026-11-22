@@ -13,6 +13,7 @@
             <file>tests/Feature/Roles/AdminRoleManagementTest.php</file>
             <file>tests/Feature/Roles/RolesAndPermissionsSeederTest.php</file>
             <file>tests/Feature/Users/AdminUserManagementTest.php</file>
+            <file>tests/Feature/Users/AdminUserStatusTest.php</file>
             <file>tests/Feature/Users/ConcurrentUserDisableTest.php</file>
             <file>tests/Feature/Users/UserStatusServiceTest.php</file>
         </testsuite>

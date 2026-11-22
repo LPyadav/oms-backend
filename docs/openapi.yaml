@@ -246,6 +246,7 @@ paths:
         Requires an active Admin with the users.manage permission.
         Authorization is checked before the target user is looked up.
         Disables the account and revokes all of the user's existing Bearer tokens.
+        A status change and its audit event are saved in the same transaction.
         The request body can be omitted.
       parameters:
         - name: user
@@ -275,6 +276,48 @@ paths:
           $ref: '#/components/responses/ResourceNotFound'
         '409':
           $ref: '#/components/responses/LastActiveAdminConflict'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/admin/users/{user}/enable:
+    patch:
+      tags: [Admin Users]
+      operationId: enableAdminUser
+      summary: Reactivate a user account
+      description: >-
+        Requires an active Admin with the users.manage permission.
+        Reactivation preserves assigned roles and revokes any tokens still attached
+        to the disabled account. The user signs in again to get a new token.
+        The status and its audit event are saved together. An already active
+        account is returned unchanged. The request body can be omitted.
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: User ID.
+      responses:
+        '200':
+          description: The active user account.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/AdminUserResponse'
+                  - properties:
+                      data:
+                        properties:
+                          user:
+                            properties:
+                              is_active: { const: true }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
         '429':
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
