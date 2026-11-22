@@ -44,4 +44,8 @@ return [
         'PAGINATION_ROLES_DEFAULT_PER_PAGE',
         'PAGINATION_ROLES_MAX_PER_PAGE',
     ),
+    'customers' => $pagination(
+        'PAGINATION_CUSTOMERS_DEFAULT_PER_PAGE',
+        'PAGINATION_CUSTOMERS_MAX_PER_PAGE',
+    ),
 ];

@@ -18,6 +18,15 @@ return [
         'last_active_admin' => 'At least one active Admin must remain.',
     ],
 
+    'customers' => [
+        'list_retrieved' => 'Customers retrieved successfully.',
+        'retrieved' => 'Customer retrieved successfully.',
+        'created' => 'Customer created successfully.',
+        'updated' => 'Customer updated successfully.',
+        'deactivated' => 'Customer deactivated successfully.',
+        'fields_required' => 'Provide at least one customer field to update.',
+    ],
+
     'roles' => [
         'list_retrieved' => 'Roles retrieved successfully.',
         'created' => 'Role created successfully.',

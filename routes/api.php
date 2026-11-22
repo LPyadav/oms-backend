@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Customers\CustomerController;
 use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
@@ -27,6 +28,23 @@ Route::middleware('auth:sanctum')->group(static function (): void {
 
     Route::get('/me', [AuthController::class, 'me'])
         ->name('auth.me');
+
+    Route::prefix('customers')->name('customers.')->group(static function (): void {
+        Route::get('/', [CustomerController::class, 'index'])->name('index');
+        Route::post('/', [CustomerController::class, 'store'])->name('store');
+
+        Route::get('/{customer}', [CustomerController::class, 'show'])
+            ->whereNumber('customer')
+            ->name('show');
+
+        Route::patch('/{customer}', [CustomerController::class, 'update'])
+            ->whereNumber('customer')
+            ->name('update');
+
+        Route::patch('/{customer}/deactivate', [CustomerController::class, 'deactivate'])
+            ->whereNumber('customer')
+            ->name('deactivate');
+    });
 
     Route::prefix('admin/users')->name('admin.users.')->group(static function (): void {
         Route::get('/', [AdminUserController::class, 'index'])
