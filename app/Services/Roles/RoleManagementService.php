@@ -7,6 +7,7 @@ namespace App\Services\Roles;
 use App\Models\User;
 use App\Policies\RolePolicy;
 use App\Services\Audit\AccessAuditLogWriter;
+use App\Services\Users\AdminUserWriteLock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -16,7 +17,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use LogicException;
 use RuntimeException;
 use Spatie\Permission\Guard;
 use Spatie\Permission\Models\Permission;
@@ -41,6 +41,7 @@ final readonly class RoleManagementService
     public function __construct(
         private RolePolicy $rolePolicy,
         private AccessAuditLogWriter $auditLogWriter,
+        private AdminUserWriteLock $writeLock,
     ) {}
 
     /**
@@ -62,8 +63,8 @@ final readonly class RoleManagementService
     public function create(User $actor, string $name): Role
     {
         return DB::transaction(function () use ($actor, $name): Role {
-            $guardName = Guard::getDefaultName(User::class);
-            $lockedActor = $this->lockActor($actor, $guardName);
+            ['adminRole' => $adminRole, 'actor' => $lockedActor] = $this->writeLock->acquire($actor);
+            $guardName = $adminRole->guard_name;
 
             if (! $this->rolePolicy->create($lockedActor)) {
                 throw new AuthorizationException;
@@ -84,8 +85,8 @@ final readonly class RoleManagementService
     public function update(User $actor, int|string $roleId, string $name): Role
     {
         return DB::transaction(function () use ($actor, $roleId, $name): Role {
-            $guardName = Guard::getDefaultName(User::class);
-            $lockedActor = $this->lockActor($actor, $guardName);
+            ['adminRole' => $adminRole, 'actor' => $lockedActor] = $this->writeLock->acquire($actor);
+            $guardName = $adminRole->guard_name;
 
             if (! $this->rolePolicy->update($lockedActor)) {
                 throw new AuthorizationException;
@@ -145,8 +146,8 @@ final readonly class RoleManagementService
     public function replacePermissions(User $actor, int|string $roleId, array $permissionNames): Role
     {
         return DB::transaction(function () use ($actor, $roleId, $permissionNames): Role {
-            $guardName = Guard::getDefaultName(User::class);
-            $lockedActor = $this->lockActor($actor, $guardName);
+            ['adminRole' => $adminRole, 'actor' => $lockedActor] = $this->writeLock->acquire($actor);
+            $guardName = $adminRole->guard_name;
 
             if (! $this->rolePolicy->assignPermissions($lockedActor)) {
                 throw new AuthorizationException;
@@ -243,27 +244,6 @@ final readonly class RoleManagementService
         }
 
         return $snapshot;
-    }
-
-    private function lockActor(User $actor, string $guardName): User
-    {
-        $adminRole = Role::query()
-            ->where('name', self::ADMIN_ROLE_NAME)
-            ->where('guard_name', $guardName)
-            ->lockForUpdate()
-            ->first();
-
-        if ($adminRole === null || $adminRole->name !== self::ADMIN_ROLE_NAME || $adminRole->guard_name !== $guardName) {
-            throw new LogicException('The Admin role must be seeded before changing roles.');
-        }
-
-        $lockedActor = User::query()->lockForUpdate()->find($actor->id);
-
-        if ($lockedActor === null) {
-            throw new AuthorizationException;
-        }
-
-        return $lockedActor;
     }
 
     private function customRoleName(string $name): string
