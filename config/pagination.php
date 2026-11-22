@@ -52,6 +52,10 @@ return [
         'PAGINATION_ORDERS_DEFAULT_PER_PAGE',
         'PAGINATION_ORDERS_MAX_PER_PAGE',
     ),
+    'order_assignees' => $pagination(
+        'PAGINATION_ORDER_ASSIGNEES_DEFAULT_PER_PAGE',
+        'PAGINATION_ORDER_ASSIGNEES_MAX_PER_PAGE',
+    ),
     'products' => $pagination(
         'PAGINATION_PRODUCTS_DEFAULT_PER_PAGE',
         'PAGINATION_PRODUCTS_MAX_PER_PAGE',

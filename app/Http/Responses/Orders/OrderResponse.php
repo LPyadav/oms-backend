@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Responses\Orders;
 
+use App\Http\Resources\OrderAssigneeResource;
 use App\Http\Resources\OrderNoteResource;
 use App\Http\Resources\OrderResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Order;
 use App\Models\OrderNote;
+use App\Models\User;
 use App\Services\Orders\OrderPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,12 +35,21 @@ final readonly class OrderResponse
             data: [
                 'orders' => OrderResource::collection($orders->getCollection())->resolve($request),
             ],
-            meta: [
-                'current_page' => $orders->currentPage(),
-                'per_page' => $orders->perPage(),
-                'total' => $orders->total(),
-                'last_page' => $orders->lastPage(),
+            meta: $this->paginationMeta($orders),
+        );
+    }
+
+    /**
+     * @param  LengthAwarePaginator<int, User>  $assignees
+     */
+    public function assignees(LengthAwarePaginator $assignees, Request $request): JsonResponse
+    {
+        return $this->apiResponse->success(
+            message: Lang::string('api.orders.assignees_retrieved'),
+            data: [
+                'assignees' => OrderAssigneeResource::collection($assignees->getCollection())->resolve($request),
             ],
+            meta: $this->paginationMeta($assignees),
         );
     }
 
@@ -98,6 +109,22 @@ final readonly class OrderResponse
         return $this->apiResponse->success(
             message: Lang::string('api.orders.deleted'),
         );
+    }
+
+    /**
+     * @template TRecord of Order|User
+     *
+     * @param  LengthAwarePaginator<int, TRecord>  $records
+     * @return array{current_page: int, per_page: int, total: int, last_page: int}
+     */
+    private function paginationMeta(LengthAwarePaginator $records): array
+    {
+        return [
+            'current_page' => $records->currentPage(),
+            'per_page' => $records->perPage(),
+            'total' => $records->total(),
+            'last_page' => $records->lastPage(),
+        ];
     }
 
     /**

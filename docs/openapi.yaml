@@ -987,6 +987,45 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/orders/assignees:
+    get:
+      tags: [Orders]
+      operationId: listOrderAssignees
+      summary: List assignable employees
+      description: >-
+        Requires an active user with orders.view.any and orders.assign.
+        Returns only the ID and name of active users, ordered by case-insensitive name and then ID.
+        Order creation and assignment revalidate the new assignee during the write transaction.
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 255 }
+          description: Match a literal case-insensitive substring of the name. Whitespace is trimmed and blank values are ignored.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, default: 25 }
+          description: Defaults to 25 with a maximum of 100. Both limits are configurable.
+      responses:
+        '200':
+          description: Assignable employees retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderAssigneeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/orders/{order}:
     parameters:
       - name: order
@@ -2135,6 +2174,18 @@ components:
               required: [orders]
               properties:
                 orders: { type: array, items: { $ref: '#/components/schemas/OrderSummary' } }
+            meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    OrderAssigneeListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [assignees]
+              properties:
+                assignees: { type: array, items: { $ref: '#/components/schemas/OrderActor' } }
             meta: { $ref: '#/components/schemas/PaginationMeta' }
 
     OrderDetailResponse:

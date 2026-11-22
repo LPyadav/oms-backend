@@ -23,6 +23,7 @@ return [
 
     'orders' => [
         'assigned' => 'Order assignment updated successfully.',
+        'assignees_retrieved' => 'Assignable employees retrieved successfully.',
         'note_added' => 'Order note added successfully.',
         'assignment_not_allowed' => 'This order can no longer be assigned.',
         'activity_write_contention' => 'The order activity could not be saved because a record is busy. Try again after the retry interval.',

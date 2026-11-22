@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Orders\AssignOrderRequest;
 use App\Http\Requests\Orders\ChangeOrderStatusRequest;
 use App\Http\Requests\Orders\DeleteOrderRequest;
+use App\Http\Requests\Orders\ListOrderAssigneesRequest;
 use App\Http\Requests\Orders\ListOrdersRequest;
 use App\Http\Requests\Orders\PreviewOrderRequest;
 use App\Http\Requests\Orders\ShowOrderRequest;
@@ -17,6 +18,7 @@ use App\Http\Requests\Orders\UpdateOrderRequest;
 use App\Http\Responses\Orders\OrderResponse;
 use App\Models\User;
 use App\Services\Orders\OrderActivityService;
+use App\Services\Orders\OrderAssigneeLookup;
 use App\Services\Orders\OrderLifecycleService;
 use App\Services\Orders\OrderService;
 use Illuminate\Auth\AuthenticationException;
@@ -29,6 +31,7 @@ final class OrderController extends Controller
         private readonly OrderService $orderService,
         private readonly OrderLifecycleService $orderLifecycleService,
         private readonly OrderActivityService $orderActivityService,
+        private readonly OrderAssigneeLookup $assigneeLookup,
         private readonly OrderResponse $orderResponse,
     ) {}
 
@@ -37,6 +40,17 @@ final class OrderController extends Controller
         $orders = $this->orderService->paginate($this->actor($request), $request->criteria());
 
         return $this->orderResponse->list($orders, $request);
+    }
+
+    public function assignees(ListOrderAssigneesRequest $request): JsonResponse
+    {
+        $assignees = $this->assigneeLookup->paginate(
+            search: $request->search(),
+            page: $request->page(),
+            perPage: $request->perPage(),
+        );
+
+        return $this->orderResponse->assignees($assignees, $request);
     }
 
     public function show(ShowOrderRequest $request, string $order): JsonResponse

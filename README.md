@@ -163,6 +163,7 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | GET | /api/orders | List orders visible to the caller |
 | POST | /api/orders | Create a draft order |
 | POST | /api/orders/preview | Calculate pricing for a new or editable order |
+| GET | /api/orders/assignees | List active employees for order assignment |
 | GET | /api/orders/{order} | Read customer, assignee, items, pricing, notes, and status history |
 | PATCH | /api/orders/{order} | Edit a draft or pending order |
 | DELETE | /api/orders/{order} | Soft-delete an eligible order |
@@ -226,6 +227,22 @@ attempt count with `ORDERS_WRITE_ATTEMPTS` and the retry interval with
 request. For creation, reuse the original `Idempotency-Key`. For a versioned
 write that returns `409 ORDER_VERSION_CONFLICT`, fetch the current order and
 review the change before retrying.
+
+Use `GET /api/orders/assignees` to populate the assignee selector. The
+caller must be active and have `orders.view.any` and `orders.assign`.
+The lookup lists active users by name ignoring case, then by ID. Each entry in
+`data.assignees` contains only `id` and `name`.
+
+Pass an optional `search` query parameter to match a literal substring
+of the name, ignoring case. Leading and trailing whitespace is trimmed,
+and a blank term is ignored. The maximum search length is 255 characters.
+Use `page` and `per_page` to page through matches. The page size defaults
+to 25 with a maximum of 100. Configure those limits with
+`PAGINATION_ORDER_ASSIGNEES_DEFAULT_PER_PAGE` and
+`PAGINATION_ORDER_ASSIGNEES_MAX_PER_PAGE`.
+
+The lookup supports selection. Order creation and assignment revalidate
+new assignees within the write transaction.
 
 Assignment takes assignee_id and expected_version. Supply null to unassign.
 Changes require an active assignee and an eligible order. Assignment history
