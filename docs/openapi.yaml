@@ -381,6 +381,79 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/admin/users/{user}/permissions:
+    parameters:
+      - name: user
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+        description: User ID.
+    get:
+      tags: [Admin Users]
+      operationId: showAdminUserPermissions
+      summary: Get a user's direct and inherited permissions
+      description: Requires an active Admin with both the users.manage and roles.manage permissions.
+      responses:
+        '200':
+          description: The target user's direct and role-inherited permission keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserPermissionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Admin Users]
+      operationId: assignAdminUserPermissions
+      summary: Replace a user's direct permissions
+      description: >-
+        Requires an active Admin with both the users.manage and roles.manage
+        permissions. An empty list clears all direct grants. Role-inherited
+        permissions remain effective. Each change is audited in the same
+        transaction and repeating the same set creates no additional entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignUserPermissionsRequest'
+            examples:
+              replace:
+                summary: Replace direct grants
+                value:
+                  direct_permissions: [products.view]
+              clear:
+                summary: Clear direct grants
+                value:
+                  direct_permissions: []
+      responses:
+        '200':
+          description: The target user's resulting direct and inherited permission keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserPermissionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/admin/roles:
     get:
       tags: [Admin Roles]
@@ -740,6 +813,40 @@ components:
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
           description: Existing role names with exact spelling. An empty list clears all roles when permitted.
+
+    AssignUserPermissionsRequest:
+      type: object
+      required: [direct_permissions]
+      properties:
+        direct_permissions:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+          description: Existing permission keys with exact spelling. An empty list clears direct grants.
+      not:
+        required: [inherited_permissions]
+
+    AdminUserPermissionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            meta: { type: 'null' }
+            data:
+              type: object
+              required: [user_id, direct_permissions, inherited_permissions]
+              properties:
+                user_id: { type: integer, format: int64, minimum: 1 }
+                direct_permissions:
+                  type: array
+                  uniqueItems: true
+                  items: { type: string }
+                  description: Grants assigned directly to the user.
+                inherited_permissions:
+                  type: array
+                  readOnly: true
+                  uniqueItems: true
+                  items: { type: string }
+                  description: Grants from the user's current roles. A key can appear in both lists.
 
     RoleNameRequest:
       type: object

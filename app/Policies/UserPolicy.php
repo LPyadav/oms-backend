@@ -40,6 +40,11 @@ final class UserPolicy
             && $actor->checkPermissionTo('roles.manage');
     }
 
+    public function assignPermissions(User $actor): bool
+    {
+        return $this->assignRoles($actor);
+    }
+
     private function canManageUsers(User $actor): bool
     {
         return $actor->is_active

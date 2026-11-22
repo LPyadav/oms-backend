@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Users;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Users\AssignUserPermissionsRequest;
 use App\Http\Requests\Users\AssignUserRolesRequest;
 use App\Http\Requests\Users\DisableUserRequest;
 use App\Http\Requests\Users\EnableUserRequest;
@@ -14,6 +15,7 @@ use App\Http\Requests\Users\UpdateUserRequest;
 use App\Http\Responses\Users\AdminUserResponse;
 use App\Models\User;
 use App\Services\Users\UserManagementService;
+use App\Services\Users\UserPermissionAssignmentService;
 use App\Services\Users\UserRoleAssignmentService;
 use App\Services\Users\UserStatusService;
 use Illuminate\Auth\AuthenticationException;
@@ -85,6 +87,30 @@ final class AdminUserController extends Controller
         );
 
         return $this->adminUserResponse->update($updated, $request);
+    }
+
+    public function showPermissions(
+        Request $request,
+        string $user,
+        UserPermissionAssignmentService $userPermissionAssignmentService,
+    ): JsonResponse {
+        $permissions = $userPermissionAssignmentService->show($this->actor($request), $user);
+
+        return $this->adminUserResponse->permissions($permissions);
+    }
+
+    public function assignPermissions(
+        AssignUserPermissionsRequest $request,
+        string $user,
+        UserPermissionAssignmentService $userPermissionAssignmentService,
+    ): JsonResponse {
+        $permissions = $userPermissionAssignmentService->replace(
+            actor: $this->actor($request),
+            targetId: $user,
+            permissionNames: $request->permissionNames(),
+        );
+
+        return $this->adminUserResponse->permissions($permissions, updated: true);
     }
 
     private function actor(Request $request): User
