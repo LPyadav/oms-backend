@@ -163,9 +163,10 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | GET | /api/orders | List orders visible to the caller |
 | POST | /api/orders | Create a draft order |
 | POST | /api/orders/preview | Calculate pricing for a new or editable order |
-| GET | /api/orders/{order} | Read customer, assignee, items, pricing, and notes |
+| GET | /api/orders/{order} | Read customer, assignee, items, pricing, notes, and status history |
 | PATCH | /api/orders/{order} | Edit a draft or pending order |
 | DELETE | /api/orders/{order} | Soft-delete an eligible order |
+| POST | /api/orders/{order}/status | Change status and record the transition |
 
 Use search to match order number, customer name or email, product name or SKU
 as stored on the order, and assigned employee name. Combine it with status,
@@ -192,6 +193,20 @@ query string. A stale version returns 409 ORDER_VERSION_CONFLICT and the saved v
 meta.version. An edit preview requires the complete items array. Set order_id
 to reuse existing snapshots and the saved order discount. Supply an explicit
 order_discount_minor to preview a different discount.
+
+Order status advances from Draft to Pending, Confirmed, Processing, Ready,
+and Completed. Admin and Manager can cancel through Ready with the required
+grants. Staff with assigned-status permission can move assigned orders from
+Confirmed to Processing and from Processing to Ready. Completed and Cancelled
+are terminal.
+
+Send status, expected_version, and optional remarks as JSON to change the
+status. Confirmation deducts stock once. Cancellation restores the actual
+deduction, if one exists. Stock, history, and audit update in the same
+transaction. Completion records completed_at for reporting.
+
+An exhausted lock retry returns 503 WRITE_CONTENTION with Retry-After and
+X-Request-ID. The retry interval is configurable via ORDERS_RETRY_AFTER_SECONDS.
 
 ### Admin user, role, and permission endpoints
 

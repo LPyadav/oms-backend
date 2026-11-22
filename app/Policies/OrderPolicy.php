@@ -46,6 +46,18 @@ final class OrderPolicy
         return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.notes.create.any');
     }
 
+    public function changeStatus(User $actor): bool
+    {
+        return $this->changeAnyStatus($actor)
+            || ($this->hasPermission($actor, 'orders.view.assigned')
+                && $this->hasPermission($actor, 'orders.status.update.assigned'));
+    }
+
+    public function changeAnyStatus(User $actor): bool
+    {
+        return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.status.update.any');
+    }
+
     private function hasPermission(User $actor, string $permission): bool
     {
         return $actor->is_active && $actor->checkPermissionTo($permission, Guard::getDefaultName($actor));

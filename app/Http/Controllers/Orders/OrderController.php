@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Orders;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Orders\ChangeOrderStatusRequest;
 use App\Http\Requests\Orders\DeleteOrderRequest;
 use App\Http\Requests\Orders\ListOrdersRequest;
 use App\Http\Requests\Orders\PreviewOrderRequest;
@@ -13,6 +14,7 @@ use App\Http\Requests\Orders\StoreOrderRequest;
 use App\Http\Requests\Orders\UpdateOrderRequest;
 use App\Http\Responses\Orders\OrderResponse;
 use App\Models\User;
+use App\Services\Orders\OrderLifecycleService;
 use App\Services\Orders\OrderService;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +24,7 @@ final class OrderController extends Controller
 {
     public function __construct(
         private readonly OrderService $orderService,
+        private readonly OrderLifecycleService $orderLifecycleService,
         private readonly OrderResponse $orderResponse,
     ) {}
 
@@ -63,6 +66,19 @@ final class OrderController extends Controller
         $updated = $this->orderService->update($this->actor($request), $order, $request->orderData());
 
         return $this->orderResponse->update($updated, $request);
+    }
+
+    public function changeStatus(ChangeOrderStatusRequest $request, string $order): JsonResponse
+    {
+        $updated = $this->orderLifecycleService->transition(
+            $this->actor($request),
+            $order,
+            $request->status(),
+            $request->expectedVersion(),
+            $request->remarks(),
+        );
+
+        return $this->orderResponse->statusUpdated($updated, $request);
     }
 
     public function destroy(DeleteOrderRequest $request, string $order): JsonResponse

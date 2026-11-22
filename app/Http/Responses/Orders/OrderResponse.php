@@ -72,6 +72,11 @@ final readonly class OrderResponse
         return $this->order($order, $request, Lang::string('api.orders.updated'));
     }
 
+    public function statusUpdated(Order $order, Request $request): JsonResponse
+    {
+        return $this->order($order, $request, Lang::string('api.orders.status_updated'));
+    }
+
     public function delete(): JsonResponse
     {
         return $this->apiResponse->success(

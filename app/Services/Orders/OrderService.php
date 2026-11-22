@@ -42,7 +42,13 @@ use RuntimeException;
  */
 final readonly class OrderService
 {
-    private const array DETAIL_RELATIONS = ['customer', 'assignee:id,name', 'items', 'notes.author:id,name'];
+    private const array DETAIL_RELATIONS = [
+        'customer',
+        'assignee:id,name',
+        'items',
+        'notes.author:id,name',
+        'statusHistory.actor:id,name',
+    ];
 
     private const array AUDIT_FIELDS = [
         'order_number',

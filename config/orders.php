@@ -29,4 +29,5 @@ return [
     'max_items' => $boundedInteger('ORDERS_MAX_ITEMS', 100, 1000),
     'max_note_length' => $boundedInteger('ORDERS_MAX_NOTE_LENGTH', 2000, 10000),
     'write_attempts' => $boundedInteger('ORDERS_WRITE_ATTEMPTS', 2, 5),
+    'retry_after_seconds' => $boundedInteger('ORDERS_RETRY_AFTER_SECONDS', 1, 60),
 ];

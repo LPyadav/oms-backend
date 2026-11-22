@@ -22,6 +22,12 @@ return [
     ],
 
     'orders' => [
+        'status_updated' => 'Order status updated successfully.',
+        'invalid_transition' => 'The order cannot change from :from to :to.',
+        'confirmation_product_unavailable' => 'Product :sku is no longer active and cannot be confirmed.',
+        'insufficient_stock' => 'Not enough stock is available for product :sku.',
+        'restoration_stock_limit' => 'Cancelling this order would exceed the stock limit for product :sku.',
+        'write_contention' => 'The order status could not be saved because a record is busy. Try again after the retry interval.',
         'list_retrieved' => 'Orders retrieved successfully.',
         'retrieved' => 'Order retrieved successfully.',
         'created' => 'Order created successfully.',

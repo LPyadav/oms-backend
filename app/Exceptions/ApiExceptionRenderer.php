@@ -8,6 +8,7 @@ use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
 use App\Exceptions\Catalog\CatalogWriteContentionException;
 use App\Exceptions\Inventory\StockVersionConflictException;
+use App\Exceptions\Orders\OrderLifecycleContentionException;
 use App\Exceptions\Orders\OrderVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
@@ -43,14 +44,16 @@ final readonly class ApiExceptionRenderer
             return $response;
         }
 
-        if ($exception instanceof CatalogWriteContentionException) {
+        if ($exception instanceof CatalogWriteContentionException || $exception instanceof OrderLifecycleContentionException) {
+            $orderContention = $exception instanceof OrderLifecycleContentionException;
+
             return $this->apiResponse->error(
-                message: Lang::string('api.errors.write_contention'),
+                message: Lang::string($orderContention ? 'api.orders.write_contention' : 'api.errors.write_contention'),
                 code: ApiErrorCode::WRITE_CONTENTION,
                 status: Response::HTTP_SERVICE_UNAVAILABLE,
                 headers: [
                     ...$this->forwardedHeaders($response),
-                    'retry-after' => Config::integer('catalog.retry_after_seconds'),
+                    'retry-after' => Config::integer($orderContention ? 'orders.retry_after_seconds' : 'catalog.retry_after_seconds'),
                     'x-request-id' => $exception->requestId,
                 ],
                 meta: ['request_id' => $exception->requestId],

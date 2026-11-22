@@ -77,6 +77,14 @@ final class Order extends Model
     }
 
     /**
+     * @return HasMany<OrderStatusHistory, $this>
+     */
+    public function statusHistory(): HasMany
+    {
+        return $this->hasMany(OrderStatusHistory::class)->orderBy('id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
