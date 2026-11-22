@@ -25,6 +25,8 @@ final class ApiErrorCode
 
     public const string LAST_ACTIVE_ADMIN = 'LAST_ACTIVE_ADMIN';
 
+    public const string ORDER_VERSION_CONFLICT = 'ORDER_VERSION_CONFLICT';
+
     public const string RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED';
 
     public const string REQUEST_FAILED = 'REQUEST_FAILED';

@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\OrderPriority;
 use App\Enums\OrderStatus;
+use Carbon\CarbonImmutable;
 use Database\Factories\OrderFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,6 +16,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
+ * @property-read CarbonImmutable $order_date
+ * @property-write CarbonImmutable|string $order_date
+ * @property OrderPriority $priority
+ * @property OrderStatus $status
+ * @property CarbonImmutable|null $completed_at
  * @property int $subtotal_minor
  * @property int $order_discount_minor
  * @property int $discount_total_minor
@@ -60,6 +66,14 @@ final class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class)->orderBy('position');
+    }
+
+    /**
+     * @return HasMany<OrderNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(OrderNote::class)->orderBy('id');
     }
 
     /**

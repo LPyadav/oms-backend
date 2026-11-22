@@ -156,6 +156,33 @@ revokes the token used for that request. Other device tokens can remain active.
 
 Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 
+### Orders
+
+| Method | Endpoint | Operation |
+| --- | --- | --- |
+| GET | /api/orders | List orders visible to the caller |
+| POST | /api/orders | Create a draft order |
+| POST | /api/orders/preview | Calculate pricing for a new or editable order |
+| GET | /api/orders/{order} | Read customer, assignee, items, pricing, and notes |
+| PATCH | /api/orders/{order} | Edit a draft or pending order |
+| DELETE | /api/orders/{order} | Soft-delete an eligible order |
+
+Order writes accept JSON. Send an active customer ID, an order date, and a
+non-empty list of distinct product IDs and positive quantities to create a
+draft. Optional fields include priority, an active assignee, an initial
+note, and fixed item and order discounts.
+
+The server snapshots the product name, SKU, price, and applicable tax rate.
+All pricing values use integer minor units in the configured two-decimal
+business currency. For example, 2000 USD minor units represent $20.00.
+Keep ORDERS_CURRENCY aligned with the Catalog currency.
+
+PATCH accepts expected_version in its JSON body. DELETE accepts it in the
+query string. A stale version returns 409 ORDER_VERSION_CONFLICT and the saved version in
+meta.version. An edit preview requires the complete items array. Set order_id
+to reuse existing snapshots and the saved order discount. Supply an explicit
+order_discount_minor to preview a different discount.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |

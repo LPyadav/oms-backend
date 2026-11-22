@@ -4,7 +4,7 @@ info:
   title: OMS Backend API
   version: '0.1.0'
   description: |
-    Order Management System health, authentication, access administration, customer management, and product catalog endpoints.
+    Order Management System health, authentication, access administration, customer management, product catalog, and order endpoints.
 
     All registered API routes share a default limit of 120 requests per
     minute per client IP. Requests rejected for missing or invalid
@@ -820,6 +820,213 @@ paths:
         '503':
           $ref: '#/components/responses/CatalogWriteContention'
 
+  /api/orders:
+    get:
+      tags: [Orders]
+      operationId: listOrders
+      summary: List visible orders
+      description: >-
+        Requires orders.view.any or orders.view.assigned. Assigned-only readers are scoped to their own orders.
+        Results are ordered by order date descending, then ID descending.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: The deployment default and maximum are configurable.
+      responses:
+        '200':
+          description: List visible orders.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Orders]
+      operationId: createOrder
+      summary: Create a draft order
+      description: >-
+        Requires orders.view.any and orders.create. Supplying a non-null assignee or note also requires its respective permission.
+        The server snapshots active catalog products, derives all amounts, and saves the draft, lines, optional note, and audit atomically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Create a draft order.
+          headers:
+            Location:
+              description: Relative URL of the created order.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/orders/preview:
+    post:
+      tags: [Orders]
+      operationId: previewOrderPricing
+      summary: Calculate an order pricing preview
+      description: >-
+        Supply the full item list. A new-order preview requires create access and defaults to zero order-wide discount.
+        Supply order_id with update access to reuse existing snapshots and the saved discount. An explicit discount overrides that default.
+        Preview has no side effects. Order creation and updates recalculate totals on the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderPricingPreviewRequest'
+      responses:
+        '200':
+          description: Calculate an order pricing preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPricingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/orders/{order}:
+    parameters:
+      - name: order
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+        description: Order ID.
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      summary: Get a visible order
+      description: >-
+        Returns customer and assignee details, priced item snapshots, and notes.
+        An order outside the caller's assigned scope is returned as unavailable.
+      responses:
+        '200':
+          description: Get a visible order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags: [Orders]
+      operationId: updateOrder
+      summary: Update an editable order
+      description: >-
+        Requires orders.view.any and orders.update. Draft and pending orders are editable.
+        Provide expected_version and at least one writable field.
+        If items are supplied they replace the whole item list in the submitted sequence.
+        Existing products retain their price, tax, name, and SKU snapshots. Omitted order discount retains the current amount.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        '200':
+          description: Update an editable order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/OrderVersionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags: [Orders]
+      operationId: deleteOrder
+      summary: Soft-delete an eligible order
+      description: >-
+        Requires an active Admin with orders.view.any and orders.delete.
+        Draft, pending, and cancelled orders are eligible. Item and note records remain available for historical retention.
+      parameters:
+        - name: expected_version
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: Soft-delete an eligible order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDeletedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/OrderVersionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/products:
     get:
       tags: [Products]
@@ -1468,6 +1675,221 @@ components:
                   $ref: '#/components/schemas/Customer'
             meta: { type: 'null' }
 
+    OrderMinorUnits:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+      description: Integer minor units for a two-decimal currency.
+
+    OrderPriority:
+      type: string
+      enum: [low, normal, high, urgent]
+
+    OrderItemInput:
+      type: object
+      additionalProperties: false
+      required: [product_id, quantity]
+      properties:
+        product_id: { type: integer, format: int64, minimum: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        item_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits', default: 0 }
+
+    CreateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [customer_id, order_date, items]
+      properties:
+        customer_id: { type: integer, format: int64, minimum: 1 }
+        order_date: { type: string, format: date }
+        priority: { $ref: '#/components/schemas/OrderPriority', default: normal }
+        assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+        note: { type: [string, 'null'], maxLength: 10000 }
+        order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits', default: 0 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: Distinct products. The deployed item limit defaults to 100 and is configurable.
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+
+    UpdateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      properties:
+        expected_version: { type: integer, format: int64, minimum: 1 }
+        customer_id: { type: integer, format: int64, minimum: 1 }
+        order_date: { type: string, format: date }
+        priority: { $ref: '#/components/schemas/OrderPriority' }
+        order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: Distinct products. The deployed item limit defaults to 100 and is configurable.
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+      minProperties: 2
+
+    OrderPricingPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        order_id: { type: integer, format: int64, minimum: 1 }
+        order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          description: Distinct products. The deployed item limit defaults to 100 and is configurable.
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+
+    OrderActor:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+
+    OrderNote:
+      type: object
+      additionalProperties: false
+      required: [id, author, body, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        author: { $ref: '#/components/schemas/OrderActor' }
+        body: { type: string }
+        created_at: { type: [string, 'null'], format: date-time }
+
+    OrderItemSnapshot:
+      type: object
+      additionalProperties: false
+      required: [product_id, product_name, product_sku, position, quantity, unit_price_minor, subtotal_minor, item_discount_minor, allocated_order_discount_minor, tax_rate_basis_points, tax_minor, line_total_minor]
+      properties:
+        product_id: { type: integer, format: int64, minimum: 1 }
+        product_name: { type: string }
+        product_sku: { type: string, maxLength: 64 }
+        position: { type: integer, minimum: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        unit_price_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        item_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        allocated_order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        tax_rate_basis_points: { type: integer, minimum: 0, maximum: 10000 }
+        tax_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        line_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+
+    OrderPricing:
+      type: object
+      additionalProperties: false
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, items]
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        discount_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        tax_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItemSnapshot' } }
+
+    OrderSummary:
+      type: object
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee]
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        discount_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        tax_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        id: { type: integer, format: int64, minimum: 1 }
+        order_number: { type: string, maxLength: 40 }
+        customer_id: { type: integer, format: int64, minimum: 1 }
+        assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+        order_date: { type: string, format: date }
+        priority: { $ref: '#/components/schemas/OrderPriority' }
+        status: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] }
+        version: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+        customer: { $ref: '#/components/schemas/Customer' }
+        assignee: { oneOf: [{ $ref: '#/components/schemas/OrderActor' }, { type: 'null' }] }
+
+    OrderDetail:
+      type: object
+      additionalProperties: false
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee, items, notes]
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        discount_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        tax_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        id: { type: integer, format: int64, minimum: 1 }
+        order_number: { type: string, maxLength: 40 }
+        customer_id: { type: integer, format: int64, minimum: 1 }
+        assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+        order_date: { type: string, format: date }
+        priority: { $ref: '#/components/schemas/OrderPriority' }
+        status: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] }
+        version: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+        customer: { $ref: '#/components/schemas/Customer' }
+        assignee: { oneOf: [{ $ref: '#/components/schemas/OrderActor' }, { type: 'null' }] }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItemSnapshot' } }
+        notes: { type: array, items: { $ref: '#/components/schemas/OrderNote' } }
+
+    OrderListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [orders]
+              properties:
+                orders: { type: array, items: { $ref: '#/components/schemas/OrderSummary' } }
+            meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    OrderDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [order]
+              properties:
+                order: { $ref: '#/components/schemas/OrderDetail' }
+            meta: { type: 'null' }
+
+    OrderPricingResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [pricing]
+              properties:
+                pricing: { $ref: '#/components/schemas/OrderPricing' }
+            meta: { type: 'null' }
+
+    OrderDeletedResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data: { type: 'null' }
+            meta: { type: 'null' }
+
     ProductMetadataFields:
       type: object
       properties:
@@ -1753,6 +2175,22 @@ components:
                     properties:
                       fields:
                         required: [name]
+
+    OrderVersionConflict:
+      description: The supplied expected_version differs from the current saved order version.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            message: The order changed since it was last read. Fetch the order and try again.
+            data: null
+            errors:
+              code: ORDER_VERSION_CONFLICT
+              fields:
+                expected_version: [The order changed since it was last read. Fetch the order and try again.]
+            meta: { version: 2 }
 
     ValidationFailed:
       description: One or more request body fields failed validation.

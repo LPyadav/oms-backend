@@ -8,6 +8,7 @@ use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
 use App\Exceptions\Catalog\CatalogWriteContentionException;
 use App\Exceptions\Inventory\StockVersionConflictException;
+use App\Exceptions\Orders\OrderVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
@@ -60,6 +61,7 @@ final readonly class ApiExceptionRenderer
             $exception instanceof InvalidCredentialsException,
             $exception instanceof AuthenticationException => Response::HTTP_UNAUTHORIZED,
             $exception instanceof LastActiveAdminException,
+            $exception instanceof OrderVersionConflictException,
             $exception instanceof StockVersionConflictException => Response::HTTP_CONFLICT,
             $exception instanceof ValidationException && ! $response->isClientError() => Response::HTTP_UNPROCESSABLE_ENTITY,
             default => $response->getStatusCode(),
@@ -77,6 +79,10 @@ final readonly class ApiExceptionRenderer
             $exception instanceof LastActiveAdminException => [
                 ApiErrorCode::LAST_ACTIVE_ADMIN,
                 'api.users.last_active_admin',
+            ],
+            $exception instanceof OrderVersionConflictException => [
+                ApiErrorCode::ORDER_VERSION_CONFLICT,
+                'api.orders.version_conflict',
             ],
             $exception instanceof StockVersionConflictException,
             $exception instanceof ValidationException => [
@@ -97,6 +103,9 @@ final readonly class ApiExceptionRenderer
             code: $code,
             status: $status,
             fields: match (true) {
+                $exception instanceof OrderVersionConflictException => [
+                    'expected_version' => [Lang::string('api.orders.version_conflict')],
+                ],
                 $exception instanceof StockVersionConflictException => [
                     'expected_stock_version' => [Lang::string('api.products.stock_version_conflict')],
                 ],
@@ -104,9 +113,11 @@ final readonly class ApiExceptionRenderer
                 default => [],
             },
             headers: $headers,
-            meta: $exception instanceof StockVersionConflictException
-                ? ['stock_version' => $exception->currentStockVersion]
-                : null,
+            meta: match (true) {
+                $exception instanceof StockVersionConflictException => ['stock_version' => $exception->currentStockVersion],
+                $exception instanceof OrderVersionConflictException => ['version' => $exception->currentVersion],
+                default => null,
+            },
         );
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Customers\CustomerController;
+use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
@@ -45,6 +46,25 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::patch('/{customer}/deactivate', [CustomerController::class, 'deactivate'])
             ->whereNumber('customer')
             ->name('deactivate');
+    });
+
+    Route::prefix('orders')->name('orders.')->group(static function (): void {
+        Route::get('/', [OrderController::class, 'index'])->name('index');
+        Route::post('/', [OrderController::class, 'store'])->name('store');
+
+        Route::post('/preview', [OrderController::class, 'preview'])->name('preview');
+
+        Route::get('/{order}', [OrderController::class, 'show'])
+            ->whereNumber('order')
+            ->name('show');
+
+        Route::patch('/{order}', [OrderController::class, 'update'])
+            ->whereNumber('order')
+            ->name('update');
+
+        Route::delete('/{order}', [OrderController::class, 'destroy'])
+            ->whereNumber('order')
+            ->name('destroy');
     });
 
     Route::prefix('products')->name('products.')->group(static function (): void {
