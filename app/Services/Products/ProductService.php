@@ -8,13 +8,13 @@ use App\Models\Product;
 use App\Models\User;
 use App\Policies\ProductPolicy;
 use App\Services\Audit\AuditLogWriter;
+use App\Services\Catalog\CatalogWriteTransaction;
 use App\Services\Users\AdminUserWriteLock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -28,6 +28,7 @@ final readonly class ProductService
         private ProductPolicy $productPolicy,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
+        private CatalogWriteTransaction $writeTransaction,
     ) {}
 
     /**
@@ -74,8 +75,8 @@ final readonly class ProductService
      */
     public function create(User $actor, array $attributes): Product
     {
-        return DB::transaction(function () use ($actor, $attributes): Product {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $attributes): Product {
+            $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->productPolicy->create($lockedActor)) {
                 throw new AuthorizationException;
             }
@@ -102,8 +103,8 @@ final readonly class ProductService
      */
     public function update(User $actor, int|string $productId, array $attributes): Product
     {
-        return DB::transaction(function () use ($actor, $productId, $attributes): Product {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $productId, $attributes): Product {
+            $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->productPolicy->update($lockedActor)) {
                 throw new AuthorizationException;
             }
@@ -134,8 +135,8 @@ final readonly class ProductService
 
     public function deactivate(User $actor, int|string $productId): Product
     {
-        return DB::transaction(function () use ($actor, $productId): Product {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $productId): Product {
+            $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->productPolicy->deactivate($lockedActor)) {
                 throw new AuthorizationException;
             }

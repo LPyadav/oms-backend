@@ -8,12 +8,12 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Policies\CustomerPolicy;
 use App\Services\Audit\AuditLogWriter;
+use App\Services\Catalog\CatalogWriteTransaction;
 use App\Services\Users\AdminUserWriteLock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 final readonly class CustomerService
@@ -24,6 +24,7 @@ final readonly class CustomerService
         private CustomerPolicy $customerPolicy,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
+        private CatalogWriteTransaction $writeTransaction,
     ) {}
 
     /**
@@ -72,8 +73,8 @@ final readonly class CustomerService
      */
     public function create(User $actor, array $attributes): Customer
     {
-        return DB::transaction(function () use ($actor, $attributes): Customer {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $attributes): Customer {
+            $lockedActor = $this->writeLock->acquireShared($actor);
 
             if (! $this->customerPolicy->create($lockedActor)) {
                 throw new AuthorizationException;
@@ -101,8 +102,8 @@ final readonly class CustomerService
      */
     public function update(User $actor, int|string $customerId, array $attributes): Customer
     {
-        return DB::transaction(function () use ($actor, $customerId, $attributes): Customer {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $customerId, $attributes): Customer {
+            $lockedActor = $this->writeLock->acquireShared($actor);
 
             if (! $this->customerPolicy->update($lockedActor)) {
                 throw new AuthorizationException;
@@ -134,8 +135,8 @@ final readonly class CustomerService
 
     public function deactivate(User $actor, int|string $customerId): Customer
     {
-        return DB::transaction(function () use ($actor, $customerId): Customer {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $customerId): Customer {
+            $lockedActor = $this->writeLock->acquireShared($actor);
 
             if (! $this->customerPolicy->deactivate($lockedActor)) {
                 throw new AuthorizationException;

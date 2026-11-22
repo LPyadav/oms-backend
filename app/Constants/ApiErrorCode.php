@@ -29,6 +29,8 @@ final class ApiErrorCode
 
     public const string REQUEST_FAILED = 'REQUEST_FAILED';
 
+    public const string WRITE_CONTENTION = 'WRITE_CONTENTION';
+
     public const string INTERNAL_SERVER_ERROR = 'INTERNAL_SERVER_ERROR';
 
     private function __construct() {}

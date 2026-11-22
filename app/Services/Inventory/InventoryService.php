@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Policies\ProductPolicy;
+use App\Services\Catalog\CatalogWriteTransaction;
 use App\Services\Users\AdminUserWriteLock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,7 @@ final readonly class InventoryService
     public function __construct(
         private ProductPolicy $productPolicy,
         private AdminUserWriteLock $writeLock,
+        private CatalogWriteTransaction $writeTransaction,
     ) {}
 
     public function adjust(
@@ -33,8 +35,8 @@ final readonly class InventoryService
     ): Product {
         $this->assertValidMovement($stockQuantity, $reason);
 
-        return DB::transaction(function () use ($actor, $productId, $stockQuantity, $expectedStockVersion, $reason): Product {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+        return $this->writeTransaction->run(function () use ($actor, $productId, $stockQuantity, $expectedStockVersion, $reason): Product {
+            $lockedActor = $this->writeLock->acquireShared($actor);
 
             if (! $this->productPolicy->adjustStock($lockedActor)) {
                 throw new AuthorizationException;

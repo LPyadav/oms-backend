@@ -60,6 +60,7 @@ return [
         'method_not_allowed' => 'The request method is not supported for this endpoint.',
         'rate_limit_exceeded' => 'Too many requests. Please try again later.',
         'request_failed' => 'The request could not be processed.',
+        'write_contention' => 'The requested change could not be saved because the catalog is busy. Try again after the retry interval.',
         'internal_server_error' => 'An unexpected error occurred.',
     ],
 ];

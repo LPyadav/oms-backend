@@ -42,10 +42,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::table('stock_movements')
-            ->where('type', self::MOVEMENT_TYPE)
-            ->where('reason', self::REASON)
-            ->whereNull('actor_id')
-            ->delete();
+        // Opening balances are permanent ledger entries that later movements build on.
     }
 };

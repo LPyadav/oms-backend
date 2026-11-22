@@ -29,6 +29,7 @@ final class UpdateCustomerRequest extends FormRequest
             'email' => ['bail', 'nullable', 'string', 'max:254', 'email'],
             'phone' => ['bail', 'nullable', 'string', 'max:32'],
             'address' => ['bail', 'nullable', 'string', 'max:1000'],
+            'is_active' => ['missing'],
         ];
     }
 

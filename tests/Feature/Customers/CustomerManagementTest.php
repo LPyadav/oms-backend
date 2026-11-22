@@ -11,6 +11,7 @@ use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
@@ -37,12 +38,11 @@ final class CustomerManagementTest extends TestCase
     {
         $admin = $this->authenticateAs('admin');
 
-        $this->postJson(self::ENDPOINT, [
+        $this->postJson(self::ENDPOINT.'?is_active=0', [
             'name' => 'Harbor Retail',
             'email' => 'buyer@example.test',
             'phone' => '+15550101010',
             'address' => 'Dock 4',
-            'is_active' => false,
         ])
             ->assertCreated()
             ->assertJsonPath('data.customer.name', 'Harbor Retail')
@@ -52,7 +52,7 @@ final class CustomerManagementTest extends TestCase
         $customer = Customer::query()->sole();
         $path = self::ENDPOINT.'/'.$customer->id;
 
-        $this->patchJson($path, ['phone' => null, 'is_active' => false])
+        $this->patchJson($path.'?is_active=0', ['phone' => null])
             ->assertOk()
             ->assertJsonPath('data.customer.email', 'buyer@example.test')
             ->assertJsonPath('data.customer.phone', null)
@@ -158,9 +158,10 @@ final class CustomerManagementTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['name', 'email', 'phone', 'address'], 'errors.fields');
 
-        $this->patchJson($path.'?name=QueryOnly', ['is_active' => false])
+        $this->patchJson($path.'?name=QueryOnly')
             ->assertUnprocessable()
-            ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED);
+            ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED)
+            ->assertJsonValidationErrors(['name'], 'errors.fields');
 
         $this->patchJson($path, ['name' => null])
             ->assertUnprocessable()
@@ -170,6 +171,40 @@ final class CustomerManagementTest extends TestCase
         self::assertTrue($customer->is_active);
         $this->assertDatabaseCount('customers', 1);
         $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    #[DataProvider('statusValues')]
+    public function test_customer_create_and_update_reject_status_in_the_body(?bool $requestedStatus, bool $currentStatus): void
+    {
+        $this->authenticateAs('admin');
+
+        $this->postJson(self::ENDPOINT, ['name' => 'New customer', 'is_active' => $requestedStatus])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED)
+            ->assertJsonValidationErrors(['is_active'], 'errors.fields');
+
+        $this->assertDatabaseCount('customers', 0);
+
+        $customer = Customer::factory()->create(['name' => 'Original name', 'is_active' => $currentStatus]);
+
+        $this->patchJson(self::ENDPOINT.'/'.$customer->id, ['name' => 'Unsaved name', 'is_active' => $requestedStatus])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED)
+            ->assertJsonValidationErrors(['is_active'], 'errors.fields');
+
+        self::assertSame('Original name', $customer->refresh()->name);
+        self::assertSame($currentStatus, $customer->is_active);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    /** @return array<string, array{bool|null, bool}> */
+    public static function statusValues(): array
+    {
+        return [
+            'deactivation' => [false, true],
+            'reactivation' => [true, false],
+            'null' => [null, true],
+        ];
     }
 
     public function test_manager_can_read_customers_but_cannot_write_even_with_a_manage_grant(): void

@@ -6,11 +6,13 @@ namespace App\Exceptions;
 
 use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
+use App\Exceptions\Catalog\CatalogWriteContentionException;
 use App\Exceptions\Inventory\StockVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
@@ -38,6 +40,20 @@ final readonly class ApiExceptionRenderer
     ): Response {
         if (! $request->is('api', 'api/*')) {
             return $response;
+        }
+
+        if ($exception instanceof CatalogWriteContentionException) {
+            return $this->apiResponse->error(
+                message: Lang::string('api.errors.write_contention'),
+                code: ApiErrorCode::WRITE_CONTENTION,
+                status: Response::HTTP_SERVICE_UNAVAILABLE,
+                headers: [
+                    ...$this->forwardedHeaders($response),
+                    'retry-after' => Config::integer('catalog.retry_after_seconds'),
+                    'x-request-id' => $exception->requestId,
+                ],
+                meta: ['request_id' => $exception->requestId],
+            );
         }
 
         $status = match (true) {
