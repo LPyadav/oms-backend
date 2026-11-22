@@ -172,6 +172,114 @@ final class OrderListingTest extends TestCase
         }
     }
 
+    public function test_customer_sort_breaks_name_ties_by_order_id_across_pages_and_uses_live_names(): void
+    {
+        $this->authenticateAsManager();
+
+        $firstTieCustomer = Customer::factory()->create(['name' => 'Delta Trading']);
+        $secondTieCustomer = Customer::factory()->inactive()->create(['name' => 'Delta Trading']);
+        $alpha = Customer::factory()->create(['name' => 'Alpha Supplies']);
+        $zulu = Customer::factory()->create(['name' => 'Zulu Retail']);
+
+        $firstTie = Order::factory()->create(['customer_id' => $secondTieCustomer->id]);
+        $alphaOrder = Order::factory()->create(['customer_id' => $alpha->id]);
+        $secondTie = Order::factory()->create(['customer_id' => $firstTieCustomer->id]);
+        $zuluOrder = Order::factory()->create(['customer_id' => $zulu->id]);
+        $thirdTie = Order::factory()->create(['customer_id' => $secondTieCustomer->id]);
+
+        $ascending = [$alphaOrder->id, $firstTie->id, $secondTie->id, $thirdTie->id, $zuluOrder->id];
+
+        foreach (['asc' => $ascending, 'desc' => array_reverse($ascending)] as $direction => $ids) {
+            foreach (array_chunk($ids, 2) as $index => $pageIds) {
+                $this->listing([
+                    'sort' => 'customer',
+                    'direction' => $direction,
+                    'page' => $index + 1,
+                    'per_page' => 2,
+                ])->assertOk()
+                    ->assertJsonPath('data.orders.*.id', $pageIds)
+                    ->assertJsonPath('meta.current_page', $index + 1)
+                    ->assertJsonPath('meta.last_page', 3)
+                    ->assertJsonPath('meta.total', 5);
+            }
+        }
+
+        $secondTieCustomer->update(['name' => 'Aaron Supplies']);
+
+        $this->listing(['sort' => 'customer', 'direction' => 'asc'])
+            ->assertOk()
+            ->assertJsonPath('data.orders.*.id', [
+                $firstTie->id, $thirdTie->id, $alphaOrder->id, $secondTie->id, $zuluOrder->id,
+            ])
+            ->assertJsonPath('data.orders.0.customer.id', $secondTieCustomer->id)
+            ->assertJsonPath('data.orders.0.customer.name', 'Aaron Supplies')
+            ->assertJsonPath('meta.total', 5);
+    }
+
+    public function test_customer_sort_preserves_staff_scope_filters_and_totals(): void
+    {
+        $staff = User::factory()->create(['name' => 'Order Handler'])->assignRole('staff');
+        $otherStaff = User::factory()->create(['name' => 'Order Handler'])->assignRole('staff');
+        $this->withToken($staff->createToken('order-listing')->plainTextToken);
+
+        $alpha = Customer::factory()->inactive()->create(['name' => 'Alpha Dispatch']);
+        $delta = Customer::factory()->create(['name' => 'Delta Dispatch']);
+        $outsideSearch = Customer::factory()->create(['name' => 'Zulu Retail', 'email' => 'unrelated@example.test']);
+        $matching = [
+            'assignee_id' => $staff->id,
+            'status' => OrderStatus::Pending,
+            'order_date' => '2026-11-22',
+            'customer_id' => $delta->id,
+        ];
+        $deltaOrder = Order::factory()->create($matching);
+        $alphaOrder = Order::factory()->create([...$matching, 'customer_id' => $alpha->id]);
+        $deleted = Order::factory()->create($matching);
+
+        foreach ([
+            $deltaOrder,
+            $alphaOrder,
+            $deleted,
+            Order::factory()->create([...$matching, 'status' => OrderStatus::Draft]),
+            Order::factory()->create([...$matching, 'order_date' => '2026-11-21']),
+            Order::factory()->create([...$matching, 'customer_id' => $outsideSearch->id]),
+            Order::factory()->create([...$matching, 'assignee_id' => $otherStaff->id]),
+            Order::factory()->create([...$matching, 'assignee_id' => null]),
+        ] as $order) {
+            OrderItem::factory()->create([
+                'order_id' => $order->id,
+                'product_name' => 'Archived Valve',
+                'product_sku' => 'CUSTOMER-SORT-42',
+            ]);
+        }
+
+        Order::factory()->create($matching);
+        $deleted->delete();
+
+        $filters = [
+            'sort' => 'customer',
+            'direction' => 'asc',
+            'search' => 'Dispatch',
+            'sku' => 'CUSTOMER-SORT-42',
+            'status' => 'pending',
+            'date_from' => '2026-11-22',
+            'date_to' => '2026-11-22',
+        ];
+        $this->listing($filters)
+            ->assertOk()
+            ->assertJsonPath('data.orders.*.id', [$alphaOrder->id, $deltaOrder->id])
+            ->assertJsonPath('meta.total', 2);
+
+        $this->listing([...$filters, 'customer_id' => $delta->id])
+            ->assertOk()
+            ->assertJsonPath('data.orders.*.id', [$deltaOrder->id])
+            ->assertJsonPath('meta.total', 1);
+
+        $this->listing([...$filters, 'assignee_id' => $otherStaff->id])
+            ->assertOk()
+            ->assertJsonPath('data.orders', [])
+            ->assertJsonPath('meta.total', 0);
+    }
+
     public function test_pagination_breaks_sort_ties_by_id_in_the_same_direction(): void
     {
         $this->authenticateAsManager();

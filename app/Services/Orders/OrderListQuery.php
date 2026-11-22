@@ -7,7 +7,6 @@ namespace App\Services\Orders;
 use App\Enums\OrderPriority;
 use App\Enums\OrderSortField;
 use App\Enums\OrderStatus;
-use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Carbon\CarbonImmutable;
@@ -77,12 +76,53 @@ final class OrderListQuery
             $query->where('orders.order_date', '<', $nextDate);
         }
 
+        $sort = $criteria['sort'];
+        if ($sort === OrderSortField::Customer) {
+            return $this->paginateByCustomer($query, $criteria);
+        }
+
         $direction = $criteria['direction'];
-        $this->applySort($query, $criteria['sort'], $direction);
+        $this->applySort($query, $sort, $direction);
 
         return $query->with(['customer', 'assignee:id,name'])
             ->orderBy('orders.id', $direction)
             ->paginate(perPage: $criteria['per_page'], page: $criteria['page']);
+    }
+
+    /**
+     * @param  Builder<Order>  $query
+     * @param  OrderListCriteria  $criteria
+     * @return LengthAwarePaginator<int, Order>
+     */
+    private function paginateByCustomer(Builder $query, array $criteria): LengthAwarePaginator
+    {
+        $page = $criteria['page'];
+        $perPage = $criteria['per_page'];
+        $direction = $criteria['direction'];
+        $total = $query->toBase()->getCountForPagination();
+        $orders = $query->getModel()->newCollection();
+
+        if ($total > 0) {
+            // Sort the filtered IDs and names before fetching the full order rows.
+            $pageKeys = $query
+                ->join('customers as sort_customer', 'sort_customer.id', '=', 'orders.customer_id')
+                ->select(['orders.id', 'sort_customer.name as customer_name'])
+                ->orderBy('sort_customer.name', $direction)
+                ->orderBy('orders.id', $direction)
+                ->forPage($page, $perPage);
+
+            $orders = $query->getModel()->newQuery()
+                ->joinSub($pageKeys->toBase(), 'sorted_page', 'sorted_page.id', '=', 'orders.id')
+                ->select('orders.*')
+                ->with(['customer', 'assignee:id,name'])
+                ->orderBy('sorted_page.customer_name', $direction)
+                ->orderBy('orders.id', $direction)
+                ->get();
+        }
+
+        return new LengthAwarePaginator($orders, $total, $perPage, $page, [
+            'path' => LengthAwarePaginator::resolveCurrentPath(),
+        ]);
     }
 
     /**
@@ -105,6 +145,7 @@ final class OrderListQuery
 
     /**
      * @param  Builder<Order>  $query
+     * @param  OrderSortField::OrderDate|OrderSortField::Total|OrderSortField::Status|OrderSortField::Priority  $field
      * @param  'asc'|'desc'  $direction
      */
     private function applySort(Builder $query, OrderSortField $field, string $direction): void
@@ -135,10 +176,6 @@ final class OrderListQuery
                     OrderPriority::High->value,
                     OrderPriority::Urgent->value,
                 ],
-            ),
-            OrderSortField::Customer => $query->orderBy(
-                Customer::query()->select('customers.name')->whereColumn('customers.id', 'orders.customer_id'),
-                $direction,
             ),
         };
     }
