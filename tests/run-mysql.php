@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 $root = dirname(__DIR__);
@@ -14,6 +15,16 @@ $port = filter_var($configuredPort === false ? 3306 : $configuredPort, FILTER_VA
 
 if ($port === false) {
     fwrite(STDERR, "OMS_MYSQL_PORT must be a valid TCP port.\n");
+    exit(1);
+}
+
+$configuredTimeout = getenv('OMS_MYSQL_TIMEOUT_SECONDS');
+$timeoutSeconds = filter_var($configuredTimeout === false ? 600 : $configuredTimeout, FILTER_VALIDATE_INT, [
+    'options' => ['min_range' => 1],
+]);
+
+if ($timeoutSeconds === false) {
+    fwrite(STDERR, "OMS_MYSQL_TIMEOUT_SECONDS must be a positive integer in seconds.\n");
     exit(1);
 }
 
@@ -98,11 +109,13 @@ try {
             'OMS_MYSQL_ADMIN_USER' => false,
             'OMS_MYSQL_ADMIN_PASSWORD' => false,
         ],
-        timeout: 120,
+        timeout: $timeoutSeconds,
     );
     $exitCode = $process->run();
     fwrite(STDOUT, str_replace($password, '[redacted]', $process->getOutput()));
     fwrite(STDERR, str_replace($password, '[redacted]', $process->getErrorOutput()));
+} catch (ProcessTimedOutException) {
+    fwrite(STDERR, "The MySQL regression profile exceeded its {$timeoutSeconds}-second timeout. Increase OMS_MYSQL_TIMEOUT_SECONDS and retry.\n");
 } catch (Throwable) {
     fwrite(STDERR, "Could not {$step}.\n");
 } finally {

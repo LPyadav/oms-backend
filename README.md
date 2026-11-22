@@ -432,3 +432,11 @@ on `127.0.0.1`, runs PHPUnit, and removes both after the run. The provisioning
 connection defaults to port `3306`, user `root`, and an empty password. Override
 these through the process environment variables `OMS_MYSQL_PORT`,
 `OMS_MYSQL_ADMIN_USER`, and `OMS_MYSQL_ADMIN_PASSWORD`.
+
+The PHPUnit process timeout defaults to 600 seconds. Set `OMS_MYSQL_TIMEOUT_SECONDS`
+to a positive whole number of seconds in the shell to override it.
+
+```powershell
+$env:OMS_MYSQL_TIMEOUT_SECONDS = '900'
+php tests/run-mysql.php
+```
