@@ -56,6 +56,10 @@ return [
         'PAGINATION_ORDER_ASSIGNEES_DEFAULT_PER_PAGE',
         'PAGINATION_ORDER_ASSIGNEES_MAX_PER_PAGE',
     ),
+    'notifications' => $pagination(
+        'PAGINATION_NOTIFICATIONS_DEFAULT_PER_PAGE',
+        'PAGINATION_NOTIFICATIONS_MAX_PER_PAGE',
+    ),
     'products' => $pagination(
         'PAGINATION_PRODUCTS_DEFAULT_PER_PAGE',
         'PAGINATION_PRODUCTS_MAX_PER_PAGE',

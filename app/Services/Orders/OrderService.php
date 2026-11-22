@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Orders;
 
+use App\Enums\OrderNotificationType;
 use App\Enums\OrderPriority;
 use App\Enums\OrderStatus;
 use App\Exceptions\Orders\OrderIdempotencyConflictException;
@@ -17,6 +18,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Policies\OrderPolicy;
 use App\Services\Audit\AuditLogWriter;
+use App\Services\Notifications\OrderNotificationOutbox;
 use App\Services\Users\AdminUserWriteLock;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -90,6 +92,7 @@ final readonly class OrderService
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
         private OrderWriteTransaction $writeTransaction,
+        private OrderNotificationOutbox $notificationOutbox,
     ) {}
 
     /**
@@ -221,6 +224,7 @@ final readonly class OrderService
                     ['assignee_id' => null],
                     ['assignee_id' => $assigneeId],
                 );
+                $this->notificationOutbox->record($order, OrderNotificationType::Assigned);
             }
 
             $creationKey->order_id = $order->id;
