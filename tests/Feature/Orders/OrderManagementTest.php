@@ -16,6 +16,7 @@ use App\Services\Orders\OrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /** @phpstan-import-type OrderInputItem from OrderService */
@@ -108,6 +109,36 @@ final class OrderManagementTest extends TestCase
         self::assertSame(8, $first->refresh()->stock_quantity);
         self::assertSame(5, $second->refresh()->stock_quantity);
         $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_create_time_note_requires_its_own_permission(): void
+    {
+        $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $payload = [
+            ...self::payload($customer, [['product_id' => $product->id, 'quantity' => 1]]),
+            'note' => 'Confirm the collection time.',
+        ];
+
+        $this->withToken($actor->createToken('create order with note')->plainTextToken);
+        $this->postJson(self::ENDPOINT, $payload)
+            ->assertForbidden()
+            ->assertJsonPath('errors.code', ApiErrorCode::ACCESS_FORBIDDEN);
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+        $this->assertDatabaseCount('order_notes', 0);
+        $this->assertDatabaseCount('order_creation_keys', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+
+        $actor->givePermissionTo('orders.notes.create.any');
+        Auth::forgetGuards();
+
+        $this->postJson(self::ENDPOINT, $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.order.notes.0.body', $payload['note'])
+            ->assertJsonPath('data.order.notes.0.author.id', $actor->id);
     }
 
     public function test_manager_cannot_delete_even_with_the_delete_permission(): void
@@ -439,6 +470,50 @@ final class OrderManagementTest extends TestCase
         $this->assertDatabaseCount('audit_logs', 0);
     }
 
+    #[DataProvider('terminalOrderStatuses')]
+    public function test_terminal_order_rejects_pricing_and_date_edits(OrderStatus $status): void
+    {
+        $this->useBearerFor(User::factory()->create()->assignRole('manager'));
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '40.00', 'tax_rate' => '5.00']);
+
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [['product_id' => $product->id, 'quantity' => 1]]),
+            'order_discount_minor' => 300,
+            'order_tax_rate_basis_points' => 1_000,
+        ])->assertCreated();
+
+        $order = Order::query()->sole();
+        $order->forceFill([
+            'status' => $status,
+            'completed_at' => $status === OrderStatus::Completed ? now()->toImmutable() : null,
+        ])->saveOrFail();
+        $order->refresh();
+        $savedOrder = $order->getRawOriginal();
+        $savedItem = $order->items()->sole()->getRawOriginal();
+
+        foreach ([
+            'pricing' => [
+                'order_discount_minor' => 600,
+                'items' => [['product_id' => $product->id, 'quantity' => 2, 'item_discount_minor' => 100]],
+            ],
+            'date' => ['order_date' => '2026-11-23'],
+        ] as $edit => $changes) {
+            $this->patchJson(self::ENDPOINT.'/'.$order->id, [
+                'expected_version' => $order->version,
+                ...$changes,
+            ])->assertUnprocessable()
+                ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED)
+                ->assertJsonValidationErrors(['status'], 'errors.fields');
+
+            self::assertSame($savedOrder, $order->refresh()->getRawOriginal(), "Order changed after the rejected {$edit} edit.");
+            self::assertSame($savedItem, $order->items()->sole()->getRawOriginal(), "Item changed after the rejected {$edit} edit.");
+        }
+
+        $this->assertDatabaseCount('audit_logs', 1);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
     public function test_admin_soft_delete_preserves_order_lines_and_audit_history(): void
     {
         $admin = User::factory()->create()->assignRole('admin');
@@ -525,6 +600,15 @@ final class OrderManagementTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
         $this->assertDatabaseCount('audit_logs', 0);
         $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    /** @return array<string, array{OrderStatus}> */
+    public static function terminalOrderStatuses(): array
+    {
+        return [
+            'completed' => [OrderStatus::Completed],
+            'cancelled' => [OrderStatus::Cancelled],
+        ];
     }
 
     private function useBearerFor(User $actor): void

@@ -204,6 +204,29 @@ as asc or desc. Default sort is order_date desc, with order ID as a tie-breaker.
 page and per_page control server-side pagination. The default page size is 25
 and the default maximum is 100. Both are configurable.
 
+Numbered pages use an offset over the current visible results. The order ID
+tie-breaker gives a stable sequence while those results stay the same. An
+insert ahead of a page boundary between requests can move the last row of
+one page onto the next page. Refresh from page 1 to reload the current
+sequence and total.
+
+Customer sort and order-date pages after page 1 select page keys before
+loading full rows. The query still advances through the skipped keys and
+calculates an exact total for the current filters.
+
+Local MySQL 8.2.0 benchmarks used one sequential client with a 128 MiB
+InnoDB buffer pool. In the 50,000-order date-sort fixture without item rows,
+Manager page 400 at 100 orders per page improved from 400.8 to 46.7 ms p50
+and from 433.2 to 91.3 ms p95 across 10 samples per query. These timings
+cover the page SELECT. Its plan scanned 40,000 index entries and loaded
+100 full order rows.
+
+An earlier 50,000-order fixture with 250,000 item snapshots measured a
+no-match substring search at 5.30 s p50 and 35.85 s p95 across 12 local
+API requests, with most of the time spent counting matches. For a known
+identifier, use the indexed `order_number` or `sku` filter. Narrow
+substring searches with the relevant status, assignee or date filters.
+
 Order writes accept JSON. Send an active customer ID, an order date, and a
 non-empty list of distinct product IDs and positive quantities to create a
 draft. Optional fields include priority, an active assignee, an initial
