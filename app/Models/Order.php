@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Config;
 
 /**
  * @property-read CarbonImmutable $order_date
@@ -94,6 +95,20 @@ final class Order extends Model
             ->where('action', 'order.assigned')
             ->orderBy('created_at')
             ->orderBy('id');
+    }
+
+    /**
+     * @return HasMany<AuditLog, $this>
+     */
+    public function systemActivity(): HasMany
+    {
+        return $this->hasMany(AuditLog::class, 'target_id')
+            ->select(['id', 'target_id', 'actor_id', 'action', 'created_at'])
+            ->where('target_type', 'order')
+            ->whereIn('action', ['order.created', 'order.updated'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(Config::integer('orders.system_activity_limit'));
     }
 
     /**

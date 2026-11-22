@@ -164,7 +164,7 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | POST | /api/orders | Create a draft order |
 | POST | /api/orders/preview | Calculate pricing for a new or editable order |
 | GET | /api/orders/assignees | List active employees for order assignment |
-| GET | /api/orders/{order} | Read customer, assignee, items, pricing, notes, and status history |
+| GET | /api/orders/{order} | Read order details, notes, history, and system activity |
 | PATCH | /api/orders/{order} | Edit a draft or pending order |
 | DELETE | /api/orders/{order} | Soft-delete an eligible order |
 | POST | /api/orders/{order}/status | Change status and record the transition |
@@ -251,6 +251,15 @@ shows the old and new assignee IDs, acting user, and time.
 To append a note, send body as JSON. The server records the authenticated
 author. Staff with assigned-note permission can add notes to their own
 assigned orders. Notes are append-only and preserve the order version.
+
+Order detail responses include `data.order.system_activity` for callers
+who can view the order. Each entry provides `id`, `action`, `actor_id`,
+`actor_name` when available, and the ISO 8601 `created_at` timestamp.
+The two actions are `order.created` and `order.updated`. Entries appear
+newest first, with higher IDs first when timestamps match. The default
+limit is 50 entries. Set `ORDERS_SYSTEM_ACTIVITY_LIMIT` to a value from
+1 to 200. Notes, status history, and assignment history are still
+available in their respective fields.
 
 ### Admin user, role, and permission endpoints
 

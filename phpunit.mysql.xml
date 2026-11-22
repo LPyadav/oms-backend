@@ -22,6 +22,7 @@
             <file>tests/Feature/Orders/OrderLifecycleTest.php</file>
             <file>tests/Feature/Orders/OrderLifecycleConcurrencyTest.php</file>
             <file>tests/Feature/Orders/OrderManagementTest.php</file>
+            <file>tests/Feature/Orders/OrderSystemActivityTest.php</file>
             <file>tests/Feature/Products/CatalogWriteConcurrencyTest.php</file>
             <file>tests/Feature/Products/ProductInventoryTest.php</file>
             <file>tests/Feature/Products/ProductManagementTest.php</file>

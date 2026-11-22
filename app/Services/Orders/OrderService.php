@@ -50,6 +50,7 @@ final readonly class OrderService
         'notes.author:id,name',
         'statusHistory.actor:id,name',
         'assignmentHistory.actor:id,name',
+        'systemActivity.actor:id,name',
     ];
 
     private const array AUDIT_FIELDS = [
@@ -243,9 +244,9 @@ final readonly class OrderService
             if ($updatedItems !== null) {
                 OrderItem::query()->where('order_id', $order->id)->delete();
                 $this->insertItems($order, $updatedItems);
+                $order->load('items');
             }
 
-            $order->load(self::DETAIL_RELATIONS);
             $this->auditLogWriter->record(
                 $lockedActor,
                 $order,
@@ -255,7 +256,7 @@ final readonly class OrderService
                 $this->snapshot($order),
             );
 
-            return $order;
+            return $order->loadMissing(self::DETAIL_RELATIONS);
         });
     }
 

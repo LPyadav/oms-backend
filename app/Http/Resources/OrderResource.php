@@ -45,6 +45,7 @@ final class OrderResource extends JsonResource
             'notes' => OrderNoteResource::collection($this->whenLoaded('notes')),
             'status_history' => OrderStatusHistoryResource::collection($this->whenLoaded('statusHistory')),
             'assignment_history' => OrderAssignmentHistoryResource::collection($this->whenLoaded('assignmentHistory')),
+            'system_activity' => OrderSystemActivityResource::collection($this->whenLoaded('systemActivity')),
         ];
     }
 }
