@@ -11,6 +11,8 @@ final class OrderPolicy
 {
     private const string VIEW_ALL = 'orders.view.any';
 
+    private const string UPDATE = 'orders.update';
+
     private const string ASSIGN = 'orders.assign';
 
     private const string ADD_ANY_NOTE = 'orders.notes.create.any';
@@ -25,8 +27,12 @@ final class OrderPolicy
         return $this->hasPermission($actor, self::VIEW_ALL);
     }
 
-    public function create(User $actor, bool $withAssignment = false, bool $withNote = false): bool
-    {
+    public function create(
+        User $actor,
+        bool $withAssignment = false,
+        bool $withNote = false,
+        bool $withTaxOverride = false,
+    ): bool {
         if (! $actor->is_active) {
             return false;
         }
@@ -39,12 +45,13 @@ final class OrderPolicy
         return $permissions->containsStrict(self::VIEW_ALL)
             && $permissions->containsStrict('orders.create')
             && (! $withAssignment || $permissions->containsStrict(self::ASSIGN))
-            && (! $withNote || $permissions->containsStrict(self::ADD_ANY_NOTE));
+            && (! $withNote || $permissions->containsStrict(self::ADD_ANY_NOTE))
+            && (! $withTaxOverride || $permissions->containsStrict(self::UPDATE));
     }
 
     public function update(User $actor): bool
     {
-        return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.update');
+        return $this->viewAll($actor) && $this->hasPermission($actor, self::UPDATE);
     }
 
     public function delete(User $actor): bool

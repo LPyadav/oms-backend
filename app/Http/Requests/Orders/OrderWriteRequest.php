@@ -79,10 +79,14 @@ abstract class OrderWriteRequest extends FormRequest
                 'min:1',
                 'max:'.Config::integer('orders.max_items'),
             ],
-            'items.*' => ['bail', 'required', 'array:product_id,quantity,item_discount_minor'],
+            'items.*' => ['bail', 'required', 'array:product_id,quantity,item_discount_minor,tax_rate_basis_points'],
             'items.*.product_id' => ['bail', 'required', 'integer:strict', 'min:1', 'distinct:strict'],
             'items.*.quantity' => ['bail', 'required', 'integer:strict', 'min:1', 'max:'.Product::MAX_STOCK_QUANTITY],
             'items.*.item_discount_minor' => $this->discountRules(),
+            'items.*.tax_rate_basis_points' => [
+                'bail', 'sometimes', 'required', 'integer:strict', 'min:0',
+                'max:'.OrderPricingService::MAX_TAX_RATE_BASIS_POINTS,
+            ],
         ];
     }
 

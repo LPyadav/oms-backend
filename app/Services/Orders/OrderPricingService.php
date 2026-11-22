@@ -58,6 +58,8 @@ final class OrderPricingService
 
     private const int BASIS_POINTS_PER_UNIT = 10_000;
 
+    public const int MAX_TAX_RATE_BASIS_POINTS = self::BASIS_POINTS_PER_UNIT;
+
     /**
      * @param  list<LineInput>  $lines
      * @return PricedOrder
@@ -149,7 +151,7 @@ final class OrderPricingService
             || $line['quantity'] < 1
             || $line['unit_price_minor'] < 0
             || $line['tax_rate_basis_points'] < 0
-            || $line['tax_rate_basis_points'] > self::BASIS_POINTS_PER_UNIT
+            || $line['tax_rate_basis_points'] > self::MAX_TAX_RATE_BASIS_POINTS
         ) {
             $this->invalid("items.{$index}", 'invalid_pricing_input');
         }

@@ -37,7 +37,7 @@ use RuntimeException;
  * @phpstan-import-type PricedOrder from OrderPricingService
  * @phpstan-import-type PricingPreview from OrderPricingService
  *
- * @phpstan-type OrderInputItem array{product_id: int, quantity: int, item_discount_minor?: int}
+ * @phpstan-type OrderInputItem array{product_id: int, quantity: int, item_discount_minor?: int, tax_rate_basis_points?: int}
  * @phpstan-type CreateOrderData array{customer_id: int, order_date: string, items: list<OrderInputItem>, priority?: string, order_discount_minor?: int, assignee_id?: int|null, note?: string|null}
  * @phpstan-type UpdateOrderData array{expected_version: int, customer_id?: int, order_date?: string, priority?: string, items?: list<OrderInputItem>, order_discount_minor?: int}
  */
@@ -112,7 +112,11 @@ final readonly class OrderService
      */
     public function preview(User $actor, array $items, ?int $orderDiscountMinor, ?int $orderId = null): array
     {
-        if (! ($orderId === null ? $this->policy->create($actor) : $this->policy->update($actor))) {
+        $authorized = $orderId === null
+            ? $this->policy->create($actor, withTaxOverride: $this->hasTaxOverride($items))
+            : $this->policy->update($actor);
+
+        if (! $authorized) {
             throw new AuthorizationException;
         }
 
@@ -319,9 +323,26 @@ final readonly class OrderService
      */
     private function authorizeCreation(User $actor, array $data): void
     {
-        if (! $this->policy->create($actor, withAssignment: isset($data['assignee_id']), withNote: isset($data['note']))) {
+        if (! $this->policy->create(
+            $actor,
+            withAssignment: isset($data['assignee_id']),
+            withNote: isset($data['note']),
+            withTaxOverride: $this->hasTaxOverride($data['items']),
+        )) {
             throw new AuthorizationException;
         }
+    }
+
+    /** @param list<OrderInputItem> $items */
+    private function hasTaxOverride(array $items): bool
+    {
+        foreach ($items as $item) {
+            if (isset($item['tax_rate_basis_points'])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function lockCreationKey(User $actor, string $keyHash, string $requestHash): OrderCreationKey
@@ -344,7 +365,7 @@ final readonly class OrderService
     /** @param CreateOrderData $data */
     private function creationRequestHash(array $data): string
     {
-        // Preserve line order because it determines the stored item positions.
+        // Preserve line order and keep hashes stable for requests with no tax override.
         return hash('sha256', json_encode([
             'customer_id' => $data['customer_id'],
             'order_date' => $data['order_date'],
@@ -356,6 +377,7 @@ final readonly class OrderService
                 'product_id' => $item['product_id'],
                 'quantity' => $item['quantity'],
                 'item_discount_minor' => $item['item_discount_minor'] ?? 0,
+                ...(isset($item['tax_rate_basis_points']) ? ['tax_rate_basis_points' => $item['tax_rate_basis_points']] : []),
             ], $data['items']),
         ], JSON_THROW_ON_ERROR));
     }
@@ -499,6 +521,7 @@ final readonly class OrderService
                 'quantity' => $item['quantity'],
                 'item_discount_minor' => $item['item_discount_minor'] ?? 0,
                 ...$snapshot,
+                'tax_rate_basis_points' => $item['tax_rate_basis_points'] ?? $snapshot['tax_rate_basis_points'],
             ];
         }
 

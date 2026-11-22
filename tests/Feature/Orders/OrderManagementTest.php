@@ -211,6 +211,76 @@ final class OrderManagementTest extends TestCase
         self::assertSame(28_300, $audit->after_values['grand_total_minor']);
     }
 
+    public function test_creator_without_update_permission_can_use_default_tax_but_cannot_override_it(): void
+    {
+        $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '100.00', 'tax_rate' => '18.00']);
+        $item = ['product_id' => $product->id, 'quantity' => 1];
+        $overridden = [...$item, 'tax_rate_basis_points' => 0];
+
+        $this->useBearerFor($actor);
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => [$item]])->assertOk()
+            ->assertJsonPath('data.pricing.tax_total_minor', 1_800);
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => [$overridden]])->assertForbidden();
+        $this->postJson(self::ENDPOINT, self::payload($customer, [$overridden]))->assertForbidden();
+        $this->assertDatabaseCount('order_creation_keys', 0);
+        $this->postJson(self::ENDPOINT, self::payload($customer, [$item]))->assertCreated()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 1_800)
+            ->assertJsonPath('data.order.tax_total_minor', 1_800);
+    }
+
+    public function test_order_tax_override_reprices_an_edit_and_records_previous_and_new_tax_in_the_audit(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '100.00', 'tax_rate' => '18.00']);
+        $item = ['product_id' => $product->id, 'quantity' => 1];
+
+        $this->useBearerFor($manager);
+        $this->postJson(self::ENDPOINT, self::payload($customer, [$item]))->assertCreated();
+        $order = Order::query()->sole();
+        $path = self::ENDPOINT.'/'.$order->id;
+        $product->update(['tax_rate' => '20.00']);
+        $override = [...$item, 'tax_rate_basis_points' => 0];
+
+        $this->postJson(self::ENDPOINT.'/preview', ['order_id' => $order->id, 'items' => [$override]])->assertOk()
+            ->assertJsonPath('data.pricing.tax_total_minor', 0)
+            ->assertJsonPath('data.pricing.grand_total_minor', 10_000);
+        $this->patchJson($path, ['expected_version' => 1, 'items' => [$override]])->assertOk()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.grand_total_minor', 10_000)
+            ->assertJsonPath('data.order.version', 2);
+        $this->patchJson($path, ['expected_version' => 2, 'items' => [$item]])->assertOk()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.version', 2);
+
+        $audit = AuditLog::query()->where('action', 'order.updated')->sole();
+        self::assertSame($manager->id, $audit->actor_id);
+        self::assertSame(1_800, data_get($audit->before_values, 'items.0.tax_rate_basis_points'));
+        self::assertSame(0, data_get($audit->after_values, 'items.0.tax_rate_basis_points'));
+        self::assertSame('20.00', $product->refresh()->tax_rate);
+    }
+
+    public function test_item_tax_override_must_be_an_integer_between_zero_and_ten_thousand(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $this->useBearerFor($admin);
+
+        foreach ([-1, 10_001, '500', 1.5, null] as $rate) {
+            $this->postJson(self::ENDPOINT, [
+                'customer_id' => $customer->id,
+                'order_date' => '2026-11-22',
+                'items' => [['product_id' => $product->id, 'quantity' => 1, 'tax_rate_basis_points' => $rate]],
+            ])->assertUnprocessable()
+                ->assertJsonValidationErrors(['items.0.tax_rate_basis_points'], 'errors.fields');
+        }
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
     public function test_admin_soft_delete_preserves_order_lines_and_audit_history(): void
     {
         $admin = User::factory()->create()->assignRole('admin');

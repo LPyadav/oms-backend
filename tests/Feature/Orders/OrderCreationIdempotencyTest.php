@@ -86,6 +86,37 @@ final class OrderCreationIdempotencyTest extends TestCase
         $this->assertDatabaseHas('order_creation_keys', ['actor_id' => $manager->id, 'order_id' => $order->id]);
     }
 
+    public function test_idempotent_tax_override_requires_current_order_update_permission(): void
+    {
+        $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create', 'orders.update');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '20.00', 'tax_rate' => '18.00']);
+        $data = self::payload($customer, $product);
+        $data['items'][0]['tax_rate_basis_points'] = 500;
+        $headers = ['Idempotency-Key' => self::KEY];
+        $token = $actor->createToken('order creation')->plainTextToken;
+        $this->useBearer($token);
+
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => $data['items']])->assertOk()
+            ->assertJsonPath('data.pricing.grand_total_minor', 4_200);
+        $this->postJson(self::ENDPOINT, $data, $headers)->assertCreated()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 500)
+            ->assertJsonPath('data.order.grand_total_minor', 4_200);
+        $order = Order::query()->sole();
+        $this->postJson(self::ENDPOINT, $data, $headers)->assertCreated()
+            ->assertJsonPath('data.order.id', $order->id);
+        $changed = $data;
+        $changed['items'][0]['tax_rate_basis_points'] = 0;
+        $this->postJson(self::ENDPOINT, $changed, $headers)->assertConflict()
+            ->assertJsonPath('errors.code', ApiErrorCode::ORDER_IDEMPOTENCY_CONFLICT);
+
+        $actor->revokePermissionTo('orders.update');
+        $this->useBearer($token);
+        $this->postJson(self::ENDPOINT, $data, $headers)->assertForbidden();
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('order_creation_keys', 1);
+    }
+
     public function test_changed_payload_conflicts_and_the_same_key_for_another_actor_creates_a_separate_order(): void
     {
         $first = User::factory()->create()->assignRole('manager');

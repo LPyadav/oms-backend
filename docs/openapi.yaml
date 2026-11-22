@@ -912,12 +912,13 @@ paths:
       operationId: createOrder
       summary: Create a draft order
       description: >-
-        Requires orders.view.any and orders.create. Supplying a non-null assignee or note also requires its respective permission.
+        Requires orders.view.any and orders.create. A non-null assignee requires orders.assign, and a non-null note requires
+        orders.notes.create.any. Supplying a tax rate on any item also requires orders.update.
         The server snapshots active catalog products, derives all amounts, and saves the draft, lines, optional note, audit,
         and idempotency record atomically. The key is scoped to the authenticated user and stays bound to the original order.
         A retry with the same key and equivalent validated payload returns the current order details after the required permissions
         are checked again. Object field order does not affect equivalence. Omitted optional fields use their defaults and item order matters.
-        A rolled-back creation leaves the key available for retry.
+        An explicit tax rate, including zero, is part of the idempotency payload. A rolled-back creation leaves the key available for retry.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -975,6 +976,7 @@ paths:
       description: >-
         Supply the full item list. A new-order preview requires create access and defaults to zero order-wide discount.
         Supply order_id with update access to reuse existing snapshots and the saved discount. An explicit discount overrides that default.
+        A tax override requires orders.update. With no override, tax comes from the catalog for new lines and the saved rate for existing lines.
         Preview has no side effects. Order creation and updates recalculate totals on the server.
       requestBody:
         required: true
@@ -1082,7 +1084,8 @@ paths:
         Requires orders.view.any and orders.update. Draft and pending orders are editable.
         Provide expected_version and at least one writable field.
         If items are supplied they replace the whole item list in the submitted sequence.
-        Existing products retain their price, tax, name, and SKU snapshots. Omitted order discount retains the current amount.
+        Existing products retain their price, name, and SKU snapshots. Omitted tax retains their saved rate and omitted order
+        discount retains the current amount.
       requestBody:
         required: true
         content:
@@ -1959,6 +1962,14 @@ components:
         product_id: { type: integer, format: int64, minimum: 1 }
         quantity: { type: integer, minimum: 1, maximum: 2147483647 }
         item_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits', default: 0 }
+        tax_rate_basis_points:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          examples: [0, 1800]
+          description: >-
+            Optional tax rate override. 1800 means 18 percent and 0 means no tax. Omit to use the current catalog rate for a new line
+            or the saved rate for an existing line. An explicit value requires orders.update.
 
     CreateOrderRequest:
       type: object
