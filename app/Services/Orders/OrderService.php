@@ -98,7 +98,7 @@ final readonly class OrderService
      */
     public function paginate(User $actor, array $criteria): LengthAwarePaginator
     {
-        return $this->listQuery->paginate($this->visibleOrders($actor), $criteria);
+        return $this->listQuery->paginate($this->visibleOrders($actor), $criteria, $actor);
     }
 
     public function find(User $actor, string $orderId): Order

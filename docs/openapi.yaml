@@ -834,7 +834,8 @@ paths:
           in: query
           schema: { type: string, maxLength: 255 }
           description: >-
-            Match a literal substring of the order number, customer name or email, product snapshot name or SKU, or assigned employee name.
+            Match a literal substring of the order number, customer name, product snapshot name or SKU, or assigned employee name.
+            Customer email is searched only for orders where the caller can view customer contact details.
             Every term uses substring matching. Use the separate order_number or sku parameters to opt into exact filters.
         - name: order_number
           in: query
@@ -2113,7 +2114,11 @@ components:
         created_at: { type: [string, 'null'], format: date-time }
         updated_at: { type: [string, 'null'], format: date-time }
         completed_at: { type: [string, 'null'], format: date-time }
-        customer: { $ref: '#/components/schemas/Customer' }
+        customer:
+          $ref: '#/components/schemas/Customer'
+          description: >-
+            Email, phone, and address are null unless the caller has customers.view, or has
+            customers.view.assigned-orders and is the current assignee.
         assignee: { oneOf: [{ $ref: '#/components/schemas/OrderActor' }, { type: 'null' }] }
 
     OrderStatus:
@@ -2215,7 +2220,11 @@ components:
         created_at: { type: [string, 'null'], format: date-time }
         updated_at: { type: [string, 'null'], format: date-time }
         completed_at: { type: [string, 'null'], format: date-time }
-        customer: { $ref: '#/components/schemas/Customer' }
+        customer:
+          $ref: '#/components/schemas/Customer'
+          description: >-
+            Email, phone, and address are null unless the caller has customers.view, or has
+            customers.view.assigned-orders and is the current assignee.
         assignee: { oneOf: [{ $ref: '#/components/schemas/OrderActor' }, { type: 'null' }] }
         items: { type: array, items: { $ref: '#/components/schemas/OrderItemSnapshot' } }
         notes: { type: array, items: { $ref: '#/components/schemas/OrderNote' } }

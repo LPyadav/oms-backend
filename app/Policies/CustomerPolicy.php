@@ -20,6 +20,17 @@ final class CustomerPolicy
         return $this->viewAny($actor);
     }
 
+    public function orderContactScope(User $actor): OrderCustomerContactScope
+    {
+        if ($this->view($actor)) {
+            return new OrderCustomerContactScope(viewAll: true);
+        }
+
+        $mayViewAssigned = $actor->is_active && $actor->checkPermissionTo('customers.view.assigned-orders', Guard::getDefaultName($actor));
+
+        return new OrderCustomerContactScope(assignedActorId: $mayViewAssigned ? $actor->id : null);
+    }
+
     public function create(User $actor): bool
     {
         return $this->canManageCustomers($actor);

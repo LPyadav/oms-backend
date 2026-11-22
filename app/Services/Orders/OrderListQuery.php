@@ -9,6 +9,9 @@ use App\Enums\OrderSortField;
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\User;
+use App\Policies\CustomerPolicy;
+use App\Policies\OrderCustomerContactScope;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -32,15 +35,19 @@ use Illuminate\Pagination\LengthAwarePaginator;
  */
 final class OrderListQuery
 {
+    public function __construct(
+        private readonly CustomerPolicy $customerPolicy,
+    ) {}
+
     /**
      * @param  Builder<Order>  $query
      * @param  OrderListCriteria  $criteria
      * @return LengthAwarePaginator<int, Order>
      */
-    public function paginate(Builder $query, array $criteria): LengthAwarePaginator
+    public function paginate(Builder $query, array $criteria, User $actor): LengthAwarePaginator
     {
         if ($criteria['search'] !== null) {
-            $this->applySearch($query, $criteria['search']);
+            $this->applySearch($query, $criteria['search'], $this->customerPolicy->orderContactScope($actor));
         }
 
         $filters = [
@@ -133,14 +140,25 @@ final class OrderListQuery
     /**
      * @param  Builder<Order>  $query
      */
-    private function applySearch(Builder $query, string $search): void
+    private function applySearch(Builder $query, string $search, OrderCustomerContactScope $contactScope): void
     {
         $pattern = '%'.strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
 
-        $query->where(static function (Builder $matches) use ($pattern): void {
+        $query->where(static function (Builder $matches) use ($pattern, $contactScope): void {
             $matches->whereRaw("orders.order_number like ? escape '!'", [$pattern])
-                ->orWhereHas('customer', static fn (Builder $customer): Builder => $customer
-                    ->whereRaw("(customers.name like ? escape '!' or customers.email like ? escape '!')", [$pattern, $pattern]))
+                ->orWhereHas('customer', static function (Builder $customer) use ($pattern, $contactScope): void {
+                    $customer->where(static function (Builder $fields) use ($pattern, $contactScope): void {
+                        $fields->whereRaw("customers.name like ? escape '!'", [$pattern]);
+
+                        if ($contactScope->viewAll) {
+                            $fields->orWhereRaw("customers.email like ? escape '!'", [$pattern]);
+                        } elseif ($contactScope->assignedActorId !== null) {
+                            $fields->orWhere(static fn (Builder $email): Builder => $email
+                                ->where('orders.assignee_id', $contactScope->assignedActorId)
+                                ->whereRaw("customers.email like ? escape '!'", [$pattern]));
+                        }
+                    });
+                })
                 ->orWhereHas('items', static fn (Builder $item): Builder => $item
                     ->whereRaw("(order_items.product_name like ? escape '!' or order_items.product_sku like ? escape '!')", [$pattern, $pattern]))
                 ->orWhereHas('assignee', static fn (Builder $assignee): Builder => $assignee

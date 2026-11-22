@@ -12,8 +12,10 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Testing\TestResponse;
+use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -73,6 +75,101 @@ final class OrderListingTest extends TestCase
         $this->listing(['search' => 'Live replacement model'])
             ->assertOk()
             ->assertJsonPath('meta.total', 0);
+    }
+
+    public function test_revoking_staff_customer_grant_masks_contacts_but_preserves_assigned_order_access(): void
+    {
+        $staff = User::factory()->create()->assignRole('staff');
+        $customer = Customer::factory()->create([
+            'name' => 'Northwind Scope',
+            'email' => 'private-dispatch@example.test',
+            'phone' => '5559870123',
+            'address' => '45 Market Street',
+        ]);
+        $order = Order::factory()->create([
+            'customer_id' => $customer->id,
+            'assignee_id' => $staff->id,
+            'status' => OrderStatus::Confirmed,
+        ]);
+        Order::factory()->create(['customer_id' => $customer->id, 'assignee_id' => null]);
+
+        $this->withToken($staff->createToken('order customer scope')->plainTextToken);
+        $this->listing(['search' => 'private-dispatch', 'sort' => 'customer'])->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.orders.0.id', $order->id)
+            ->assertJsonPath('data.orders.0.customer.email', $customer->email);
+        $path = self::ENDPOINT.'/'.$order->id;
+        $this->getJson($path)->assertOk()
+            ->assertJsonPath('data.order.customer.phone', $customer->phone)
+            ->assertJsonPath('data.order.customer.address', $customer->address);
+
+        Role::findByName('staff', 'web')->revokePermissionTo('customers.view.assigned-orders');
+        Auth::forgetGuards();
+        $masked = [
+            'id' => $customer->id,
+            'name' => $customer->name,
+            'email' => null,
+            'phone' => null,
+            'address' => null,
+            'is_active' => true,
+        ];
+
+        $this->listing([])->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.orders.0.id', $order->id)
+            ->assertJsonPath('data.orders.0.customer', $masked);
+        $this->getJson($path)->assertOk()
+            ->assertJsonPath('data.order.id', $order->id)
+            ->assertJsonPath('data.order.customer', $masked);
+        $this->listing(['search' => 'Northwind', 'sort' => 'customer'])->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.orders.0.id', $order->id)
+            ->assertJsonPath('data.orders.0.customer', $masked);
+        $this->listing(['search' => 'private-dispatch', 'sort' => 'customer'])->assertOk()
+            ->assertJsonPath('meta.total', 0)
+            ->assertJsonCount(0, 'data.orders');
+        $this->postJson($path.'/status', ['status' => 'processing', 'expected_version' => 1])->assertOk()
+            ->assertJsonPath('data.order.status', 'processing')
+            ->assertJsonPath('data.order.customer', $masked);
+    }
+
+    public function test_global_order_visibility_does_not_widen_assigned_customer_contact_scope(): void
+    {
+        $role = Role::create(['name' => 'order-contact-reviewer', 'guard_name' => 'web']);
+        $role->givePermissionTo('orders.view.any', 'customers.view.assigned-orders');
+        $actor = User::factory()->create()->assignRole($role);
+        $otherActor = User::factory()->create();
+
+        $own = Customer::factory()->create(['email' => 'mine@order-contact.example.test']);
+        $other = Customer::factory()->create(['email' => 'other@order-contact.example.test']);
+        $unassigned = Customer::factory()->create(['email' => 'none@order-contact.example.test']);
+        $orders = Order::factory()->state(['order_date' => '2026-11-22']);
+        $assignedOrder = $orders->create(['customer_id' => $own->id, 'assignee_id' => $actor->id]);
+        $otherOrder = $orders->create(['customer_id' => $other->id, 'assignee_id' => $otherActor->id]);
+        $unassignedOrder = $orders->create(['customer_id' => $unassigned->id, 'assignee_id' => null]);
+
+        $this->withToken($actor->createToken('mixed order customer scope')->plainTextToken);
+        $this->listing(['sort' => 'order_date', 'direction' => 'asc'])->assertOk()
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('data.orders.0.id', $assignedOrder->id)
+            ->assertJsonPath('data.orders.0.customer.email', $own->email)
+            ->assertJsonPath('data.orders.1.id', $otherOrder->id)
+            ->assertJsonPath('data.orders.1.customer.email', null)
+            ->assertJsonPath('data.orders.2.id', $unassignedOrder->id)
+            ->assertJsonPath('data.orders.2.customer.email', null);
+        $this->listing(['search' => '@order-contact.example.test'])->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.orders.0.id', $assignedOrder->id);
+        $this->listing(['search' => '@order-contact.example.test', 'per_page' => 1, 'page' => 2])->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonCount(0, 'data.orders');
+
+        $role->givePermissionTo('customers.view');
+        Auth::forgetGuards();
+        $this->listing(['search' => '@order-contact.example.test', 'sort' => 'order_date', 'direction' => 'asc'])->assertOk()
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('data.orders.1.customer.email', $other->email)
+            ->assertJsonPath('data.orders.2.customer.email', $unassigned->email);
     }
 
     public function test_search_treats_wildcard_characters_as_literal_text(): void

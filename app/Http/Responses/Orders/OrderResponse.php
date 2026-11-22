@@ -11,6 +11,8 @@ use App\Http\Responses\ApiResponse;
 use App\Models\Order;
 use App\Models\OrderNote;
 use App\Models\User;
+use App\Policies\CustomerPolicy;
+use App\Policies\OrderCustomerContactScope;
 use App\Services\Orders\OrderPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,6 +26,7 @@ final readonly class OrderResponse
 {
     public function __construct(
         private ApiResponse $apiResponse,
+        private CustomerPolicy $customerPolicy,
     ) {}
 
     /**
@@ -31,11 +34,14 @@ final readonly class OrderResponse
      */
     public function list(LengthAwarePaginator $orders, Request $request): JsonResponse
     {
+        $contactScope = $this->customerContactScope($request);
+        $data = $orders->getCollection()->map(
+            static fn (Order $order): array => (new OrderResource($order, $contactScope))->resolve($request),
+        )->all();
+
         return $this->apiResponse->success(
             message: Lang::string('api.orders.list_retrieved'),
-            data: [
-                'orders' => OrderResource::collection($orders->getCollection())->resolve($request),
-            ],
+            data: ['orders' => $data],
             meta: $this->paginationMeta($orders),
         );
     }
@@ -118,6 +124,15 @@ final readonly class OrderResponse
         );
     }
 
+    private function customerContactScope(Request $request): OrderCustomerContactScope
+    {
+        $actor = $request->user();
+
+        return $actor instanceof User
+            ? $this->customerPolicy->orderContactScope($actor)
+            : new OrderCustomerContactScope;
+    }
+
     /**
      * @template TRecord of Order|User
      *
@@ -146,7 +161,7 @@ final readonly class OrderResponse
     ): JsonResponse {
         return $this->apiResponse->success(
             message: $message,
-            data: ['order' => (new OrderResource($order))->resolve($request)],
+            data: ['order' => (new OrderResource($order, $this->customerContactScope($request)))->resolve($request)],
             status: $status,
             headers: $headers,
         );

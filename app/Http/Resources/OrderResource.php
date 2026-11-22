@@ -7,12 +7,18 @@ namespace App\Http\Resources;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\User;
+use App\Policies\OrderCustomerContactScope;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin Order */
 final class OrderResource extends JsonResource
 {
+    public function __construct(Order $resource, private readonly OrderCustomerContactScope $contactScope)
+    {
+        parent::__construct($resource);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -37,7 +43,7 @@ final class OrderResource extends JsonResource
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
             'completed_at' => $this->completed_at?->toISOString(),
-            'customer' => $this->whenLoaded('customer', static fn (Customer $customer): CustomerResource => new CustomerResource($customer)),
+            'customer' => $this->whenLoaded('customer', fn (Customer $customer): array => $this->customerData($customer, $request)),
             'assignee' => $this->whenLoaded('assignee', static fn (User $assignee): array => [
                 'id' => $assignee->id,
                 'name' => $assignee->name,
@@ -48,5 +54,19 @@ final class OrderResource extends JsonResource
             'assignment_history' => OrderAssignmentHistoryResource::collection($this->whenLoaded('assignmentHistory')),
             'system_activity' => OrderSystemActivityResource::collection($this->whenLoaded('systemActivity')),
         ];
+    }
+
+    /**
+     * @return array{id: int, name: string, email: string|null, phone: string|null, address: string|null, is_active: bool}
+     */
+    private function customerData(Customer $customer, Request $request): array
+    {
+        $data = (new CustomerResource($customer))->toArray($request);
+
+        if ($this->contactScope->allows($this->assignee_id)) {
+            return $data;
+        }
+
+        return [...$data, 'email' => null, 'phone' => null, 'address' => null];
     }
 }

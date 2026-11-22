@@ -171,10 +171,15 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | POST | /api/orders/{order}/assign | Assign or unassign the order |
 | POST | /api/orders/{order}/notes | Append a note |
 
-Use search to match order number, customer name or email, product name or SKU
-as stored on the order, and assigned employee name. Combine it with status,
-priority, customer_id, assignee_id, date_from, and date_to. Date bounds
-are inclusive and can be supplied independently.
+Use search to match order number, customer name, product name or SKU as stored on
+the order, and assigned employee name. Customer email is searched only within
+the caller’s customer contact scope. Combine search with status, priority,
+customer_id, assignee_id, date_from, and date_to. Date bounds are inclusive and
+can be supplied independently.
+
+Order responses include customer email, phone, and address when the caller has
+`customers.view`, or when the caller has `customers.view.assigned-orders` and
+is the current assignee. For other visible orders, those fields are `null`.
 
 For exact lookup, explicitly send `order_number` or `sku`. The `search`
 parameter keeps its literal substring behavior for every term. Exact
