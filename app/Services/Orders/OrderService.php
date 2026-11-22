@@ -48,6 +48,7 @@ final readonly class OrderService
         'items',
         'notes.author:id,name',
         'statusHistory.actor:id,name',
+        'assignmentHistory.actor:id,name',
     ];
 
     private const array AUDIT_FIELDS = [
@@ -171,7 +172,7 @@ final readonly class OrderService
                 $this->appendInitialNote($order, $lockedActor, $note);
             }
 
-            $order->load(self::DETAIL_RELATIONS);
+            $order->load('items');
             $this->auditLogWriter->record($lockedActor, $order, 'order', 'order.created', null, $this->snapshot($order));
             if ($assigneeId !== null) {
                 $this->auditLogWriter->record(
@@ -184,7 +185,7 @@ final readonly class OrderService
                 );
             }
 
-            return $order;
+            return $order->loadMissing(self::DETAIL_RELATIONS);
         }, attempts: $this->writeAttempts());
     }
 

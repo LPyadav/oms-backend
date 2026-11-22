@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Orders;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Orders\AssignOrderRequest;
 use App\Http\Requests\Orders\ChangeOrderStatusRequest;
 use App\Http\Requests\Orders\DeleteOrderRequest;
 use App\Http\Requests\Orders\ListOrdersRequest;
 use App\Http\Requests\Orders\PreviewOrderRequest;
 use App\Http\Requests\Orders\ShowOrderRequest;
+use App\Http\Requests\Orders\StoreOrderNoteRequest;
 use App\Http\Requests\Orders\StoreOrderRequest;
 use App\Http\Requests\Orders\UpdateOrderRequest;
 use App\Http\Responses\Orders\OrderResponse;
 use App\Models\User;
+use App\Services\Orders\OrderActivityService;
 use App\Services\Orders\OrderLifecycleService;
 use App\Services\Orders\OrderService;
 use Illuminate\Auth\AuthenticationException;
@@ -25,6 +28,7 @@ final class OrderController extends Controller
     public function __construct(
         private readonly OrderService $orderService,
         private readonly OrderLifecycleService $orderLifecycleService,
+        private readonly OrderActivityService $orderActivityService,
         private readonly OrderResponse $orderResponse,
     ) {}
 
@@ -79,6 +83,25 @@ final class OrderController extends Controller
         );
 
         return $this->orderResponse->statusUpdated($updated, $request);
+    }
+
+    public function assign(AssignOrderRequest $request, string $order): JsonResponse
+    {
+        $updated = $this->orderActivityService->assign(
+            $this->actor($request),
+            $order,
+            $request->assigneeId(),
+            $request->expectedVersion(),
+        );
+
+        return $this->orderResponse->assigned($updated, $request);
+    }
+
+    public function addNote(StoreOrderNoteRequest $request, string $order): JsonResponse
+    {
+        $note = $this->orderActivityService->addNote($this->actor($request), $order, $request->body());
+
+        return $this->orderResponse->noteAdded($note, $request);
     }
 
     public function destroy(DeleteOrderRequest $request, string $order): JsonResponse

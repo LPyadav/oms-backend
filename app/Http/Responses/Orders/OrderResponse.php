@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Responses\Orders;
 
+use App\Http\Resources\OrderNoteResource;
 use App\Http\Resources\OrderResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Order;
+use App\Models\OrderNote;
 use App\Services\Orders\OrderPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -75,6 +77,20 @@ final readonly class OrderResponse
     public function statusUpdated(Order $order, Request $request): JsonResponse
     {
         return $this->order($order, $request, Lang::string('api.orders.status_updated'));
+    }
+
+    public function assigned(Order $order, Request $request): JsonResponse
+    {
+        return $this->order($order, $request, Lang::string('api.orders.assigned'));
+    }
+
+    public function noteAdded(OrderNote $note, Request $request): JsonResponse
+    {
+        return $this->apiResponse->success(
+            message: Lang::string('api.orders.note_added'),
+            data: ['note' => (new OrderNoteResource($note))->resolve($request)],
+            status: Response::HTTP_CREATED,
+        );
     }
 
     public function delete(): JsonResponse

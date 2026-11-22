@@ -66,6 +66,14 @@ Route::middleware('auth:sanctum')->group(static function (): void {
             ->whereNumber('order')
             ->name('status.update');
 
+        Route::post('/{order}/assign', [OrderController::class, 'assign'])
+            ->whereNumber('order')
+            ->name('assign');
+
+        Route::post('/{order}/notes', [OrderController::class, 'addNote'])
+            ->whereNumber('order')
+            ->name('notes.store');
+
         Route::delete('/{order}', [OrderController::class, 'destroy'])
             ->whereNumber('order')
             ->name('destroy');

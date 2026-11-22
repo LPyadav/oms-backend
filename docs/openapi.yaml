@@ -974,7 +974,7 @@ paths:
       operationId: getOrder
       summary: Get a visible order
       description: >-
-        Returns customer and assignee details, priced item snapshots, notes, and status history.
+        Returns customer and assignee details, priced item snapshots, notes, status history, and assignment history.
         An order outside the caller's assigned scope is returned as unavailable.
       responses:
         '200':
@@ -1119,7 +1119,95 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
         '503':
-          $ref: '#/components/responses/OrderLifecycleContention'
+          $ref: '#/components/responses/OrderWriteContention'
+
+  /api/orders/{order}/assign:
+    parameters:
+      - name: order
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      tags: [Orders]
+      operationId: assignOrder
+      summary: Assign or unassign an order
+      description: >-
+        Requires orders.view.any and orders.assign. The assignee must be active
+        when changing the assignment. Send null to unassign. Completed and cancelled
+        orders reject assignment changes. An unchanged assignment preserves the
+        order version and writes no additional audit entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignOrderRequest'
+      responses:
+        '200':
+          description: The order with its current assignment and history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/OrderVersionConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/OrderWriteContention'
+
+  /api/orders/{order}/notes:
+    parameters:
+      - name: order
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      tags: [Orders]
+      operationId: addOrderNote
+      summary: Append an order note
+      description: >-
+        All-orders note access requires orders.view.any and orders.notes.create.any.
+        Assigned-only note access requires orders.view.assigned and orders.notes.create.assigned.
+        Notes are append-only. The author comes from the authenticated caller.
+        Adding a note preserves the order version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreOrderNoteRequest'
+      responses:
+        '201':
+          description: The new order note.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderNoteCreatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/OrderWriteContention'
 
   /api/products:
     get:
@@ -1939,10 +2027,50 @@ components:
         actor: { $ref: '#/components/schemas/OrderActor' }
         created_at: { type: string, format: date-time }
 
+    AssignOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [assignee_id, expected_version]
+      properties:
+        assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+        expected_version: { type: integer, format: int64, minimum: 1 }
+
+    StoreOrderNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 10000, pattern: '\S' }
+      description: The deployment may configure a smaller limit with ORDERS_MAX_NOTE_LENGTH.
+
+    OrderAssignmentHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [id, previous_assignee_id, new_assignee_id, actor_id, actor_name, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        previous_assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+        new_assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
+        actor_id: { type: integer, format: int64, minimum: 1 }
+        actor_name: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+
+    OrderNoteCreatedResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [note]
+              properties:
+                note: { $ref: '#/components/schemas/OrderNote' }
+            meta: { type: 'null' }
+
     OrderDetail:
       type: object
       additionalProperties: false
-      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee, items, notes, status_history]
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee, items, notes, status_history, assignment_history]
       properties:
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
@@ -1966,6 +2094,7 @@ components:
         items: { type: array, items: { $ref: '#/components/schemas/OrderItemSnapshot' } }
         notes: { type: array, items: { $ref: '#/components/schemas/OrderNote' } }
         status_history: { type: array, items: { $ref: '#/components/schemas/OrderStatusHistoryEntry' } }
+        assignment_history: { type: array, items: { $ref: '#/components/schemas/OrderAssignmentHistoryEntry' } }
 
     OrderListResponse:
       allOf:
@@ -2366,11 +2495,11 @@ components:
                     properties:
                       code: { const: INTERNAL_SERVER_ERROR }
 
-    OrderLifecycleContention:
+    OrderWriteContention:
       description: The write could not acquire its database locks. Wait for Retry-After before retrying.
       headers:
         Retry-After:
-          description: Seconds to wait before retrying the order status change.
+          description: Seconds to wait before retrying the order change.
           required: true
           schema: { type: integer, minimum: 1 }
         X-Request-ID:

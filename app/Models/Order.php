@@ -85,6 +85,18 @@ final class Order extends Model
     }
 
     /**
+     * @return HasMany<AuditLog, $this>
+     */
+    public function assignmentHistory(): HasMany
+    {
+        return $this->hasMany(AuditLog::class, 'target_id')
+            ->where('target_type', 'order')
+            ->where('action', 'order.assigned')
+            ->orderBy('created_at')
+            ->orderBy('id');
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

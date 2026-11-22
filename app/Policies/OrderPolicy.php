@@ -43,6 +43,18 @@ final class OrderPolicy
 
     public function addInitialNote(User $actor): bool
     {
+        return $this->addAnyNote($actor);
+    }
+
+    public function addNote(User $actor): bool
+    {
+        return $this->addAnyNote($actor)
+            || ($this->hasPermission($actor, 'orders.view.assigned')
+                && $this->hasPermission($actor, 'orders.notes.create.assigned'));
+    }
+
+    public function addAnyNote(User $actor): bool
+    {
         return $this->viewAll($actor) && $this->hasPermission($actor, 'orders.notes.create.any');
     }
 

@@ -167,6 +167,8 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | PATCH | /api/orders/{order} | Edit a draft or pending order |
 | DELETE | /api/orders/{order} | Soft-delete an eligible order |
 | POST | /api/orders/{order}/status | Change status and record the transition |
+| POST | /api/orders/{order}/assign | Assign or unassign the order |
+| POST | /api/orders/{order}/notes | Append a note |
 
 Use search to match order number, customer name or email, product name or SKU
 as stored on the order, and assigned employee name. Combine it with status,
@@ -207,6 +209,14 @@ transaction. Completion records completed_at for reporting.
 
 An exhausted lock retry returns 503 WRITE_CONTENTION with Retry-After and
 X-Request-ID. The retry interval is configurable via ORDERS_RETRY_AFTER_SECONDS.
+
+Assignment takes assignee_id and expected_version. Supply null to unassign.
+Changes require an active assignee and an eligible order. Assignment history
+shows the old and new assignee IDs, acting user, and time.
+
+To append a note, send body as JSON. The server records the authenticated
+author. Staff with assigned-note permission can add notes to their own
+assigned orders. Notes are append-only and preserve the order version.
 
 ### Admin user, role, and permission endpoints
 

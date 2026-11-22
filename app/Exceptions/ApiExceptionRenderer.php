@@ -8,6 +8,7 @@ use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
 use App\Exceptions\Catalog\CatalogWriteContentionException;
 use App\Exceptions\Inventory\StockVersionConflictException;
+use App\Exceptions\Orders\OrderActivityContentionException;
 use App\Exceptions\Orders\OrderLifecycleContentionException;
 use App\Exceptions\Orders\OrderVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
@@ -44,11 +45,20 @@ final readonly class ApiExceptionRenderer
             return $response;
         }
 
-        if ($exception instanceof CatalogWriteContentionException || $exception instanceof OrderLifecycleContentionException) {
-            $orderContention = $exception instanceof OrderLifecycleContentionException;
+        if (
+            $exception instanceof CatalogWriteContentionException
+            || $exception instanceof OrderLifecycleContentionException
+            || $exception instanceof OrderActivityContentionException
+        ) {
+            $orderContention = ! $exception instanceof CatalogWriteContentionException;
+            $messageKey = match (true) {
+                $exception instanceof OrderActivityContentionException => 'api.orders.activity_write_contention',
+                $exception instanceof OrderLifecycleContentionException => 'api.orders.write_contention',
+                default => 'api.errors.write_contention',
+            };
 
             return $this->apiResponse->error(
-                message: Lang::string($orderContention ? 'api.orders.write_contention' : 'api.errors.write_contention'),
+                message: Lang::string($messageKey),
                 code: ApiErrorCode::WRITE_CONTENTION,
                 status: Response::HTTP_SERVICE_UNAVAILABLE,
                 headers: [
