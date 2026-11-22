@@ -218,8 +218,14 @@ status. Confirmation deducts stock once. Cancellation restores the actual
 deduction, if one exists. Stock, history, and audit update in the same
 transaction. Completion records completed_at for reporting.
 
-An exhausted lock retry returns 503 WRITE_CONTENTION with Retry-After and
-X-Request-ID. The retry interval is configurable via ORDERS_RETRY_AFTER_SECONDS.
+Order create, edit, delete, status, assignment, and note writes use bounded
+transaction retries. Exhausted lock contention returns
+`503 WRITE_CONTENTION` with `Retry-After` and `X-Request-ID`. Configure the
+attempt count with `ORDERS_WRITE_ATTEMPTS` and the retry interval with
+`ORDERS_RETRY_AFTER_SECONDS`. Wait for the retry interval before resending the
+request. For creation, reuse the original `Idempotency-Key`. For a versioned
+write that returns `409 ORDER_VERSION_CONFLICT`, fetch the current order and
+review the change before retrying.
 
 Assignment takes assignee_id and expected_version. Supply null to unassign.
 Changes require an active assignee and an eligible order. Assignment history

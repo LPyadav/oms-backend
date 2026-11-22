@@ -26,6 +26,7 @@ return [
         'note_added' => 'Order note added successfully.',
         'assignment_not_allowed' => 'This order can no longer be assigned.',
         'activity_write_contention' => 'The order activity could not be saved because a record is busy. Try again after the retry interval.',
+        'crud_write_contention' => 'The order could not be saved because a record is busy. Try again after the retry interval.',
         'status_updated' => 'Order status updated successfully.',
         'invalid_transition' => 'The order cannot change from :from to :to.',
         'confirmation_product_unavailable' => 'Product :sku is no longer active and cannot be confirmed.',

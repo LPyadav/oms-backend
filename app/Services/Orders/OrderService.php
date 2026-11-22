@@ -28,7 +28,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use LogicException;
 use RuntimeException;
 
 /**
@@ -87,6 +86,7 @@ final readonly class OrderService
         private OrderPricingService $pricing,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
+        private OrderWriteTransaction $writeTransaction,
     ) {}
 
     /**
@@ -140,7 +140,7 @@ final readonly class OrderService
         $keyHash = hash('sha256', $idempotencyKey);
         $requestHash = $this->creationRequestHash($data);
 
-        return DB::transaction(function () use ($actor, $data, $keyHash, $requestHash): Order {
+        return $this->writeTransaction->run(function () use ($actor, $data, $keyHash, $requestHash): Order {
             $lockedActor = $this->writeLock->acquireShared($actor);
             $creationKey = $this->lockCreationKey($lockedActor, $keyHash, $requestHash);
             $this->authorizeCreation($lockedActor, $data);
@@ -206,7 +206,7 @@ final readonly class OrderService
             }
 
             return $order->loadMissing(self::DETAIL_RELATIONS);
-        }, attempts: $this->writeAttempts());
+        });
     }
 
     /**
@@ -218,7 +218,7 @@ final readonly class OrderService
             throw new AuthorizationException;
         }
 
-        return DB::transaction(function () use ($actor, $orderId, $data): Order {
+        return $this->writeTransaction->run(function () use ($actor, $orderId, $data): Order {
             $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->policy->update($lockedActor)) {
                 throw new AuthorizationException;
@@ -256,7 +256,7 @@ final readonly class OrderService
             );
 
             return $order;
-        }, attempts: $this->writeAttempts());
+        });
     }
 
     public function delete(User $actor, string $orderId, int $expectedVersion): void
@@ -265,7 +265,7 @@ final readonly class OrderService
             throw new AuthorizationException;
         }
 
-        DB::transaction(function () use ($actor, $orderId, $expectedVersion): void {
+        $this->writeTransaction->run(function () use ($actor, $orderId, $expectedVersion): void {
             $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->policy->delete($lockedActor)) {
                 throw new AuthorizationException;
@@ -293,20 +293,7 @@ final readonly class OrderService
                 $before,
                 $this->snapshot($order),
             );
-        }, attempts: $this->writeAttempts());
-    }
-
-    /**
-     * @return positive-int
-     */
-    private function writeAttempts(): int
-    {
-        $attempts = Config::integer('orders.write_attempts');
-        if ($attempts < 1) {
-            throw new LogicException('Order writes require at least one transaction attempt.');
-        }
-
-        return $attempts;
+        });
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Exceptions\Orders\OrderActivityContentionException;
 use App\Exceptions\Orders\OrderIdempotencyConflictException;
 use App\Exceptions\Orders\OrderLifecycleContentionException;
 use App\Exceptions\Orders\OrderVersionConflictException;
+use App\Exceptions\Orders\OrderWriteContentionException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
@@ -50,11 +51,13 @@ final readonly class ApiExceptionRenderer
             $exception instanceof CatalogWriteContentionException
             || $exception instanceof OrderLifecycleContentionException
             || $exception instanceof OrderActivityContentionException
+            || $exception instanceof OrderWriteContentionException
         ) {
             $orderContention = ! $exception instanceof CatalogWriteContentionException;
             $messageKey = match (true) {
                 $exception instanceof OrderActivityContentionException => 'api.orders.activity_write_contention',
                 $exception instanceof OrderLifecycleContentionException => 'api.orders.write_contention',
+                $exception instanceof OrderWriteContentionException => 'api.orders.crud_write_contention',
                 default => 'api.errors.write_contention',
             };
 

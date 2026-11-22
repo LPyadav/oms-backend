@@ -949,6 +949,8 @@ paths:
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/OrderWriteContention'
 
   /api/orders/preview:
     post:
@@ -1053,6 +1055,8 @@ paths:
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/OrderWriteContention'
 
     delete:
       tags: [Orders]
@@ -1087,6 +1091,8 @@ paths:
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/OrderWriteContention'
 
   /api/orders/{order}/status:
     parameters:
@@ -2283,6 +2289,7 @@ components:
                     - RESOURCE_NOT_FOUND
                     - METHOD_NOT_ALLOWED
                     - LAST_ACTIVE_ADMIN
+                    - ORDER_VERSION_CONFLICT
                     - ORDER_IDEMPOTENCY_CONFLICT
                     - RATE_LIMIT_EXCEEDED
                     - REQUEST_FAILED
