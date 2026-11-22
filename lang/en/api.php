@@ -47,6 +47,8 @@ return [
         'items_required' => 'An order must contain at least one item.',
         'product_repeated' => 'A product may appear only once in an order.',
         'invalid_pricing_input' => 'The quantity or catalog pricing is invalid for this item.',
+        'order_tax_rate_out_of_range' => 'The order tax rate must be between 0 and 10000 basis points.',
+        'order_tax_conflicts_with_item_rates' => 'Order-level tax settings cannot be combined with item tax overrides.',
         'item_discount_exceeds_subtotal' => 'The item discount must be between zero and the item subtotal.',
         'order_discount_exceeds_eligible_amount' => 'The order discount must be between zero and the total remaining after item discounts.',
         'amount_out_of_range' => 'The calculated order amounts exceed the supported range.',

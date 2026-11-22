@@ -15,6 +15,7 @@ use App\Services\Orders\OrderPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Lang;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -65,7 +66,13 @@ final readonly class OrderResponse
     {
         return $this->apiResponse->success(
             message: Lang::string('api.orders.pricing_previewed'),
-            data: ['pricing' => $pricing],
+            data: ['pricing' => [
+                ...$pricing,
+                'items' => array_map(
+                    static fn (array $line): array => Arr::except($line, 'base_tax_rate_basis_points'),
+                    $pricing['items'],
+                ),
+            ]],
         );
     }
 

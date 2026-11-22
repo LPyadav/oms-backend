@@ -28,6 +28,7 @@ final class UpdateOrderRequest extends OrderWriteRequest
             'order_date' => ['bail', 'sometimes', 'required', 'date_format:Y-m-d', 'after_or_equal:1000-01-01'],
             'priority' => $this->priorityRules(),
             'order_discount_minor' => $this->discountRules(),
+            ...$this->orderTaxRules(),
             ...$this->itemRules(required: false),
         ];
     }
@@ -61,6 +62,7 @@ final class UpdateOrderRequest extends OrderWriteRequest
                 'items' => $this->validated('items'),
                 'order_discount_minor' => $this->validated('order_discount_minor'),
             ], static fn (mixed $value): bool => $value !== null),
+            ...$this->taxOverride(),
         ];
     }
 }

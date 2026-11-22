@@ -117,6 +117,36 @@ final class OrderCreationIdempotencyTest extends TestCase
         $this->assertDatabaseCount('order_creation_keys', 1);
     }
 
+    public function test_order_total_tax_override_is_included_in_idempotency_and_rechecks_update_access(): void
+    {
+        $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create', 'orders.update');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '20.00', 'tax_rate' => '18.00']);
+        $data = [...self::payload($customer, $product), 'order_tax_rate_basis_points' => 0];
+        $headers = ['Idempotency-Key' => self::KEY];
+        $token = $actor->createToken('order tax retry')->plainTextToken;
+        $this->useBearer($token);
+
+        $this->postJson(self::ENDPOINT, $data, $headers)->assertCreated()
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.tax_total_minor', 0);
+        $order = Order::query()->sole();
+        $this->postJson(self::ENDPOINT, $data, $headers)->assertCreated()
+            ->assertJsonPath('data.order.id', $order->id);
+        $this->postJson(self::ENDPOINT, [...$data, 'order_tax_rate_basis_points' => 500], $headers)
+            ->assertConflict()
+            ->assertJsonPath('errors.code', ApiErrorCode::ORDER_IDEMPOTENCY_CONFLICT);
+        $this->postJson(self::ENDPOINT, self::payload($customer, $product), $headers)
+            ->assertConflict()
+            ->assertJsonPath('errors.code', ApiErrorCode::ORDER_IDEMPOTENCY_CONFLICT);
+
+        $actor->revokePermissionTo('orders.update');
+        $this->useBearer($token);
+        $this->postJson(self::ENDPOINT, $data, $headers)->assertForbidden();
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('order_creation_keys', 1);
+    }
+
     public function test_changed_payload_conflicts_and_the_same_key_for_another_actor_creates_a_separate_order(): void
     {
         $first = User::factory()->create()->assignRole('manager');

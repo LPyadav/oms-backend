@@ -38,8 +38,8 @@ use RuntimeException;
  * @phpstan-import-type PricingPreview from OrderPricingService
  *
  * @phpstan-type OrderInputItem array{product_id: int, quantity: int, item_discount_minor?: int, tax_rate_basis_points?: int}
- * @phpstan-type CreateOrderData array{customer_id: int, order_date: string, items: list<OrderInputItem>, priority?: string, order_discount_minor?: int, assignee_id?: int|null, note?: string|null}
- * @phpstan-type UpdateOrderData array{expected_version: int, customer_id?: int, order_date?: string, priority?: string, items?: list<OrderInputItem>, order_discount_minor?: int}
+ * @phpstan-type CreateOrderData array{customer_id: int, order_date: string, items: list<OrderInputItem>, priority?: string, order_discount_minor?: int, assignee_id?: int|null, note?: string|null, order_tax_rate_basis_points?: int|null}
+ * @phpstan-type UpdateOrderData array{expected_version: int, customer_id?: int, order_date?: string, priority?: string, items?: list<OrderInputItem>, order_discount_minor?: int, order_tax_rate_basis_points?: int|null}
  */
 final readonly class OrderService
 {
@@ -61,6 +61,7 @@ final readonly class OrderService
         'subtotal_minor',
         'order_discount_minor',
         'discount_total_minor',
+        'order_tax_rate_basis_points',
         'tax_total_minor',
         'grand_total_minor',
         'version',
@@ -76,6 +77,7 @@ final readonly class OrderService
         'subtotal_minor',
         'item_discount_minor',
         'allocated_order_discount_minor',
+        'base_tax_rate_basis_points',
         'tax_rate_basis_points',
         'tax_minor',
         'line_total_minor',
@@ -108,30 +110,41 @@ final readonly class OrderService
 
     /**
      * @param  list<OrderInputItem>  $items
+     * @param  array{order_tax_rate_basis_points?: int|null}  $taxOverride
      * @return PricingPreview
      */
-    public function preview(User $actor, array $items, ?int $orderDiscountMinor, ?int $orderId = null): array
-    {
+    public function preview(
+        User $actor,
+        array $items,
+        ?int $orderDiscountMinor,
+        ?int $orderId = null,
+        array $taxOverride = [],
+    ): array {
+        $requestedRate = $taxOverride['order_tax_rate_basis_points'] ?? null;
+        $taxRateProvided = array_key_exists('order_tax_rate_basis_points', $taxOverride);
         $authorized = $orderId === null
-            ? $this->policy->create($actor, withTaxOverride: $this->hasTaxOverride($items))
+            ? $this->policy->create($actor, withTaxOverride: $requestedRate !== null || $this->hasItemTaxOverride($items))
             : $this->policy->update($actor);
 
         if (! $authorized) {
             throw new AuthorizationException;
         }
 
-        return DB::transaction(function () use ($actor, $items, $orderDiscountMinor, $orderId): array {
+        return DB::transaction(function () use ($actor, $items, $orderDiscountMinor, $orderId, $requestedRate, $taxRateProvided): array {
             $order = $orderId === null ? null : $this->visibleOrders($actor)->findOrFail($orderId);
             if ($order !== null) {
                 $this->ensureEditable($order);
             }
+
+            $orderTaxRate = $taxRateProvided ? $requestedRate : $order?->order_tax_rate_basis_points;
+            $this->ensureCompatibleTaxRates($items, $taxRateProvided || $orderTaxRate !== null);
 
             $currency = $order->currency ?? Config::string('orders.currency');
             $snapshots = $this->resolveLines($items, $order?->items()->get() ?? new Collection, $currency);
 
             $discount = $orderDiscountMinor ?? $order->order_discount_minor ?? 0;
 
-            return ['currency' => $currency, ...$this->pricing->calculate($snapshots, $discount)];
+            return ['currency' => $currency, ...$this->pricing->calculate($snapshots, $discount, $orderTaxRate)];
         });
     }
 
@@ -141,6 +154,7 @@ final readonly class OrderService
     public function create(User $actor, array $data, string $idempotencyKey): Order
     {
         $this->authorizeCreation($actor, $data);
+        $this->ensureCompatibleTaxRates($data['items'], array_key_exists('order_tax_rate_basis_points', $data));
 
         $keyHash = hash('sha256', $idempotencyKey);
         $requestHash = $this->creationRequestHash($data);
@@ -168,7 +182,11 @@ final readonly class OrderService
             $customer = $this->activeCustomer($data['customer_id']);
             $currency = Config::string('orders.currency');
             $lines = $this->resolveLines($data['items'], new Collection, $currency, lockProducts: true);
-            $pricedOrder = $this->pricing->calculate($lines, $data['order_discount_minor'] ?? 0);
+            $pricedOrder = $this->pricing->calculate(
+                $lines,
+                $data['order_discount_minor'] ?? 0,
+                $data['order_tax_rate_basis_points'] ?? null,
+            );
 
             $order = new Order([
                 'customer_id' => $customer->id,
@@ -327,14 +345,14 @@ final readonly class OrderService
             $actor,
             withAssignment: isset($data['assignee_id']),
             withNote: isset($data['note']),
-            withTaxOverride: $this->hasTaxOverride($data['items']),
+            withTaxOverride: isset($data['order_tax_rate_basis_points']) || $this->hasItemTaxOverride($data['items']),
         )) {
             throw new AuthorizationException;
         }
     }
 
     /** @param list<OrderInputItem> $items */
-    private function hasTaxOverride(array $items): bool
+    private function hasItemTaxOverride(array $items): bool
     {
         foreach ($items as $item) {
             if (isset($item['tax_rate_basis_points'])) {
@@ -343,6 +361,16 @@ final readonly class OrderService
         }
 
         return false;
+    }
+
+    /** @param list<OrderInputItem> $items */
+    private function ensureCompatibleTaxRates(array $items, bool $usesOrderTaxSetting): void
+    {
+        if ($usesOrderTaxSetting && $this->hasItemTaxOverride($items)) {
+            throw ValidationException::withMessages([
+                'order_tax_rate_basis_points' => Lang::string('api.orders.order_tax_conflicts_with_item_rates'),
+            ]);
+        }
     }
 
     private function lockCreationKey(User $actor, string $keyHash, string $requestHash): OrderCreationKey
@@ -379,6 +407,7 @@ final readonly class OrderService
                 'item_discount_minor' => $item['item_discount_minor'] ?? 0,
                 ...(isset($item['tax_rate_basis_points']) ? ['tax_rate_basis_points' => $item['tax_rate_basis_points']] : []),
             ], $data['items']),
+            ...(isset($data['order_tax_rate_basis_points']) ? ['order_tax_rate_basis_points' => $data['order_tax_rate_basis_points']] : []),
         ], JSON_THROW_ON_ERROR));
     }
 
@@ -447,7 +476,8 @@ final readonly class OrderService
      */
     private function reprice(Order $order, array $data): ?array
     {
-        if (! isset($data['items']) && ! isset($data['order_discount_minor'])) {
+        $taxRateProvided = array_key_exists('order_tax_rate_basis_points', $data);
+        if (! isset($data['items']) && ! isset($data['order_discount_minor']) && ! $taxRateProvided) {
             return null;
         }
 
@@ -457,8 +487,15 @@ final readonly class OrderService
             'item_discount_minor' => $line->item_discount_minor,
         ])->all());
 
+        $orderTaxRate = $taxRateProvided ? $data['order_tax_rate_basis_points'] : $order->order_tax_rate_basis_points;
+        $this->ensureCompatibleTaxRates($items, $taxRateProvided || $orderTaxRate !== null);
+
         $lines = $this->resolveLines($items, $order->items, $order->currency, lockProducts: true);
-        $pricedOrder = $this->pricing->calculate($lines, $data['order_discount_minor'] ?? $order->order_discount_minor);
+        $pricedOrder = $this->pricing->calculate(
+            $lines,
+            $data['order_discount_minor'] ?? $order->order_discount_minor,
+            $orderTaxRate,
+        );
         $order->forceFill($this->totals($pricedOrder));
 
         if ($order->items->count() !== count($pricedOrder['items'])) {
@@ -466,7 +503,13 @@ final readonly class OrderService
         }
 
         foreach ($order->items->values() as $index => $line) {
-            if ((clone $line)->forceFill($pricedOrder['items'][$index])->isDirty()) {
+            $next = $pricedOrder['items'][$index];
+            // Backfill a legacy base rate only when the line otherwise needs to be replaced.
+            if ($line->base_tax_rate_basis_points === null && $next['base_tax_rate_basis_points'] === $line->tax_rate_basis_points) {
+                unset($next['base_tax_rate_basis_points']);
+            }
+
+            if ((clone $line)->forceFill($next)->isDirty()) {
                 return $pricedOrder['items'];
             }
         }
@@ -550,13 +593,13 @@ final readonly class OrderService
             'product_name' => $line->product_name,
             'product_sku' => $line->product_sku,
             'unit_price_minor' => $line->unit_price_minor,
-            'tax_rate_basis_points' => $line->tax_rate_basis_points,
+            'tax_rate_basis_points' => $line->base_tax_rate_basis_points ?? $line->tax_rate_basis_points,
         ];
     }
 
     /**
      * @param  PricedOrder  $priced
-     * @return array{subtotal_minor: int, order_discount_minor: int, discount_total_minor: int, tax_total_minor: int, grand_total_minor: int}
+     * @return array{subtotal_minor: int, order_discount_minor: int, discount_total_minor: int, order_tax_rate_basis_points: int|null, tax_total_minor: int, grand_total_minor: int}
      */
     private function totals(array $priced): array
     {
@@ -564,6 +607,7 @@ final readonly class OrderService
             'subtotal_minor' => $priced['subtotal_minor'],
             'order_discount_minor' => $priced['order_discount_minor'],
             'discount_total_minor' => $priced['discount_total_minor'],
+            'order_tax_rate_basis_points' => $priced['order_tax_rate_basis_points'],
             'tax_total_minor' => $priced['tax_total_minor'],
             'grand_total_minor' => $priced['grand_total_minor'],
         ];

@@ -19,6 +19,8 @@ use stdClass;
 
 abstract class OrderWriteRequest extends FormRequest
 {
+    private const string ORDER_TAX_RATE_FIELD = 'order_tax_rate_basis_points';
+
     /**
      * @return array<array-key, mixed>
      */
@@ -34,6 +36,12 @@ abstract class OrderWriteRequest extends FormRequest
         }
 
         $data = $this->json()->all();
+
+        // Only an explicit JSON null can reset a saved order rate.
+        if (property_exists($payload, self::ORDER_TAX_RATE_FIELD)) {
+            $data[self::ORDER_TAX_RATE_FIELD] = $payload->{self::ORDER_TAX_RATE_FIELD};
+        }
+
         $items = $payload->items ?? null;
 
         // Decode the original shape so a numeric-key object cannot pass the list rule.
@@ -56,6 +64,18 @@ abstract class OrderWriteRequest extends FormRequest
                 }
             },
         ];
+    }
+
+    /**
+     * @return array{order_tax_rate_basis_points?: int|null}
+     */
+    public function taxOverride(): array
+    {
+        $data = $this->validated();
+
+        return array_key_exists(self::ORDER_TAX_RATE_FIELD, $data)
+            ? [self::ORDER_TAX_RATE_FIELD => $data[self::ORDER_TAX_RATE_FIELD]]
+            : [];
     }
 
     protected function actorCan(string $ability): bool
@@ -85,6 +105,25 @@ abstract class OrderWriteRequest extends FormRequest
             'items.*.item_discount_minor' => $this->discountRules(),
             'items.*.tax_rate_basis_points' => [
                 'bail', 'sometimes', 'required', 'integer:strict', 'min:0',
+                'max:'.OrderPricingService::MAX_TAX_RATE_BASIS_POINTS,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    protected function orderTaxRules(): array
+    {
+        $value = $this->validationData()[self::ORDER_TAX_RATE_FIELD] ?? null;
+
+        return [
+            self::ORDER_TAX_RATE_FIELD => [
+                'bail',
+                'sometimes',
+                $value === null ? 'nullable' : 'required',
+                'integer:strict',
+                'min:0',
                 'max:'.OrderPricingService::MAX_TAX_RATE_BASIS_POINTS,
             ],
         ];

@@ -34,6 +34,7 @@ final class StoreOrderRequest extends OrderWriteRequest
             'assignee_id' => ['bail', 'sometimes', 'nullable', 'integer:strict', 'min:1'],
             'note' => ['bail', 'sometimes', 'nullable', 'string', 'max:'.Config::integer('orders.max_note_length')],
             'order_discount_minor' => $this->discountRules(),
+            ...$this->orderTaxRules(),
             ...$this->itemRules(required: true),
         ];
     }
@@ -74,6 +75,7 @@ final class StoreOrderRequest extends OrderWriteRequest
             'order_discount_minor' => $this->validated('order_discount_minor', 0),
             'assignee_id' => $this->validated('assignee_id'),
             'note' => $this->validated('note'),
+            ...$this->taxOverride(),
         ];
     }
 }

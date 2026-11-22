@@ -29,6 +29,7 @@ use Illuminate\Validation\ValidationException;
  *     item_discount_minor: int,
  *     position: int,
  *     subtotal_minor: int,
+ *     base_tax_rate_basis_points: int,
  *     allocated_order_discount_minor: int,
  *     tax_minor: int,
  *     line_total_minor: int
@@ -37,6 +38,7 @@ use Illuminate\Validation\ValidationException;
  *     subtotal_minor: int,
  *     order_discount_minor: int,
  *     discount_total_minor: int,
+ *     order_tax_rate_basis_points: int|null,
  *     tax_total_minor: int,
  *     grand_total_minor: int,
  *     items: list<PricedLine>
@@ -46,6 +48,7 @@ use Illuminate\Validation\ValidationException;
  *     subtotal_minor: int,
  *     order_discount_minor: int,
  *     discount_total_minor: int,
+ *     order_tax_rate_basis_points: int|null,
  *     tax_total_minor: int,
  *     grand_total_minor: int,
  *     items: list<PricedLine>
@@ -64,10 +67,18 @@ final class OrderPricingService
      * @param  list<LineInput>  $lines
      * @return PricedOrder
      */
-    public function calculate(array $lines, int $orderDiscountMinor): array
-    {
+    public function calculate(
+        array $lines,
+        int $orderDiscountMinor,
+        ?int $orderTaxRateBasisPoints = null,
+    ): array {
         if ($lines === []) {
             $this->invalid('items', 'items_required');
+        }
+
+        if ($orderTaxRateBasisPoints !== null
+            && ($orderTaxRateBasisPoints < 0 || $orderTaxRateBasisPoints > self::MAX_TAX_RATE_BASIS_POINTS)) {
+            $this->invalid('order_tax_rate_basis_points', 'order_tax_rate_out_of_range');
         }
 
         $subtotals = [];
@@ -106,17 +117,28 @@ final class OrderPricingService
             $this->invalid('order_discount_minor', 'order_discount_exceeds_eligible_amount');
         }
 
-        $shares = $this->allocateOrderDiscount($lines, $eligibleAmounts, $eligibleTotal, $orderDiscountMinor);
+        $discountShares = $this->allocateProportionally($lines, $eligibleAmounts, $eligibleTotal, $orderDiscountMinor);
+        $taxableAmounts = [];
+        foreach ($eligibleAmounts as $index => $eligibleAmount) {
+            $taxableAmounts[] = $eligibleAmount - $discountShares[$index];
+        }
+
+        $netTotal = $eligibleTotal - $orderDiscountMinor;
+        $orderTaxShares = $orderTaxRateBasisPoints === null ? null : $this->allocateProportionally(
+            $lines,
+            $taxableAmounts,
+            $netTotal,
+            $this->calculateTax($netTotal, $orderTaxRateBasisPoints),
+        );
+
         $taxTotal = 0;
         $grandTotal = 0;
         $pricedLines = [];
 
         foreach ($lines as $index => $line) {
-            $taxable = $eligibleAmounts[$index] - $shares[$index];
-            $tax = BigInteger::of($taxable)
-                ->multipliedBy($line['tax_rate_basis_points'])
-                ->dividedBy(self::BASIS_POINTS_PER_UNIT, RoundingMode::HalfUp)
-                ->toInt();
+            $taxable = $taxableAmounts[$index];
+            $baseRate = $line['tax_rate_basis_points'];
+            $tax = $orderTaxShares[$index] ?? $this->calculateTax($taxable, $baseRate);
             $lineTotal = $this->boundedAmount($taxable + $tax);
             $taxTotal += $tax;
             $grandTotal = $this->boundedAmount($grandTotal + $lineTotal);
@@ -125,7 +147,9 @@ final class OrderPricingService
                 ...$line,
                 'position' => $index + 1,
                 'subtotal_minor' => $subtotals[$index],
-                'allocated_order_discount_minor' => $shares[$index],
+                'allocated_order_discount_minor' => $discountShares[$index],
+                'base_tax_rate_basis_points' => $baseRate,
+                'tax_rate_basis_points' => $orderTaxRateBasisPoints ?? $baseRate,
                 'tax_minor' => $tax,
                 'line_total_minor' => $lineTotal,
             ];
@@ -135,6 +159,7 @@ final class OrderPricingService
             'subtotal_minor' => $subtotal,
             'order_discount_minor' => $orderDiscountMinor,
             'discount_total_minor' => $itemDiscountTotal + $orderDiscountMinor,
+            'order_tax_rate_basis_points' => $orderTaxRateBasisPoints,
             'tax_total_minor' => $taxTotal,
             'grand_total_minor' => $grandTotal,
             'items' => $pricedLines,
@@ -159,24 +184,24 @@ final class OrderPricingService
 
     /**
      * @param  list<LineInput>  $lines
-     * @param  list<int>  $eligibleAmounts
+     * @param  list<int>  $weights
      * @return list<int>
      */
-    private function allocateOrderDiscount(array $lines, array $eligibleAmounts, int $eligibleTotal, int $discount): array
+    private function allocateProportionally(array $lines, array $weights, int $totalWeight, int $amount): array
     {
-        if ($discount === 0) {
+        if ($amount === 0) {
             return array_fill(0, count($lines), 0);
         }
 
         $shares = [];
         $rankedRemainders = [];
-        $remaining = $discount;
-        $discountAmount = BigInteger::of($discount);
+        $remaining = $amount;
+        $exactAmount = BigInteger::of($amount);
 
         foreach ($lines as $index => $line) {
-            [$share, $remainder] = $discountAmount
-                ->multipliedBy($eligibleAmounts[$index])
-                ->quotientAndRemainder($eligibleTotal);
+            [$share, $remainder] = $exactAmount
+                ->multipliedBy($weights[$index])
+                ->quotientAndRemainder($totalWeight);
             $shareMinor = $share->toInt();
             $shares[] = $shareMinor;
             $remaining -= $shareMinor;
@@ -199,6 +224,14 @@ final class OrderPricingService
         }
 
         return array_values($shares);
+    }
+
+    private function calculateTax(int $taxableMinor, int $rateBasisPoints): int
+    {
+        return BigInteger::of($taxableMinor)
+            ->multipliedBy($rateBasisPoints)
+            ->dividedBy(self::BASIS_POINTS_PER_UNIT, RoundingMode::HalfUp)
+            ->toInt();
     }
 
     private function boundedAmount(BigInteger|int $amount): int

@@ -22,6 +22,7 @@ final class PreviewOrderRequest extends OrderWriteRequest
         return [
             'order_id' => ['bail', 'sometimes', 'required', 'integer:strict', 'min:1'],
             'order_discount_minor' => $this->discountRules(),
+            ...$this->orderTaxRules(),
             ...$this->itemRules(required: true),
         ];
     }

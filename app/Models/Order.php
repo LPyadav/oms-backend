@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Config;
  * @property int $subtotal_minor
  * @property int $order_discount_minor
  * @property int $discount_total_minor
+ * @property int|null $order_tax_rate_basis_points
  * @property int $tax_total_minor
  * @property int $grand_total_minor
  * @property int $version
@@ -123,6 +124,7 @@ final class Order extends Model
             'subtotal_minor' => 'integer',
             'order_discount_minor' => 'integer',
             'discount_total_minor' => 'integer',
+            'order_tax_rate_basis_points' => 'integer',
             'tax_total_minor' => 'integer',
             'grand_total_minor' => 'integer',
             'version' => 'integer',

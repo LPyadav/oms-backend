@@ -913,12 +913,13 @@ paths:
       summary: Create a draft order
       description: >-
         Requires orders.view.any and orders.create. A non-null assignee requires orders.assign, and a non-null note requires
-        orders.notes.create.any. Supplying a tax rate on any item also requires orders.update.
+        orders.notes.create.any. An explicit item tax rate or a non-null order tax rate also requires orders.update.
+        A request with order_tax_rate_basis_points must omit item tax overrides.
         The server snapshots active catalog products, derives all amounts, and saves the draft, lines, optional note, audit,
         and idempotency record atomically. The key is scoped to the authenticated user and stays bound to the original order.
         A retry with the same key and equivalent validated payload returns the current order details after the required permissions
         are checked again. Object field order does not affect equivalence. Omitted optional fields use their defaults and item order matters.
-        An explicit tax rate, including zero, is part of the idempotency payload. A rolled-back creation leaves the key available for retry.
+        An explicit numeric tax rate, including zero, is part of the idempotency payload. A rolled-back creation leaves the key available for retry.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -975,8 +976,10 @@ paths:
       summary: Calculate an order pricing preview
       description: >-
         Supply the full item list. A new-order preview requires create access and defaults to zero order-wide discount.
-        Supply order_id with update access to reuse existing snapshots and the saved discount. An explicit discount overrides that default.
-        A tax override requires orders.update. With no override, tax comes from the catalog for new lines and the saved rate for existing lines.
+        Supply order_id with update access to reuse existing snapshots, the saved discount, and the saved order tax mode.
+        An explicit discount overrides the saved amount. A numeric tax override requires orders.update.
+        A null order tax rate uses the saved base tax rates for existing lines and catalog rates for new lines.
+        Omit item tax overrides when an order tax rate is supplied or remains in effect.
         Preview has no side effects. Order creation and updates recalculate totals on the server.
       requestBody:
         required: true
@@ -1084,8 +1087,9 @@ paths:
         Requires orders.view.any and orders.update. Draft and pending orders are editable.
         Provide expected_version and at least one writable field.
         If items are supplied they replace the whole item list in the submitted sequence.
-        Existing products retain their price, name, and SKU snapshots. Omitted tax retains their saved rate and omitted order
-        discount retains the current amount.
+        Existing products retain their price, name, SKU, and base tax rate snapshots. Omitting the order rate retains the saved tax mode.
+        Send order_tax_rate_basis_points with expected_version to edit tax using the saved items. A null rate restores the saved base rates.
+        Omit item tax overrides when an order tax rate is supplied or remains in effect. Omitting the order discount retains the saved amount.
       requestBody:
         required: true
         content:
@@ -1954,6 +1958,15 @@ components:
       type: string
       enum: [low, normal, high, urgent]
 
+    OrderTaxRateBasisPoints:
+      type: [integer, 'null']
+      minimum: 0
+      maximum: 10000
+      examples: [0, 1000, null]
+      description: >-
+        Optional order-wide tax rate. 1000 represents 10 percent. A numeric rate applies once to the order amount after
+        item and order discounts, and the rounded tax is allocated to the items. Zero yields zero tax. Null uses item rates.
+
     OrderItemInput:
       type: object
       additionalProperties: false
@@ -1969,7 +1982,8 @@ components:
           examples: [0, 1800]
           description: >-
             Optional tax rate override. 1800 means 18 percent and 0 means no tax. Omit to use the current catalog rate for a new line
-            or the saved rate for an existing line. An explicit value requires orders.update.
+            or the saved base rate for an existing line. An explicit value requires orders.update. Omit this field if an order tax rate
+            is supplied or remains in effect.
 
     CreateOrderRequest:
       type: object
@@ -1982,6 +1996,7 @@ components:
         assignee_id: { type: [integer, 'null'], format: int64, minimum: 1 }
         note: { type: [string, 'null'], maxLength: 10000 }
         order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits', default: 0 }
+        order_tax_rate_basis_points: { $ref: '#/components/schemas/OrderTaxRateBasisPoints' }
         items:
           type: array
           minItems: 1
@@ -2000,6 +2015,7 @@ components:
         order_date: { type: string, format: date }
         priority: { $ref: '#/components/schemas/OrderPriority' }
         order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_tax_rate_basis_points: { $ref: '#/components/schemas/OrderTaxRateBasisPoints' }
         items:
           type: array
           minItems: 1
@@ -2016,6 +2032,7 @@ components:
       properties:
         order_id: { type: integer, format: int64, minimum: 1 }
         order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_tax_rate_basis_points: { $ref: '#/components/schemas/OrderTaxRateBasisPoints' }
         items:
           type: array
           minItems: 1
@@ -2063,24 +2080,26 @@ components:
     OrderPricing:
       type: object
       additionalProperties: false
-      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, items]
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, order_tax_rate_basis_points, tax_total_minor, grand_total_minor, items]
       properties:
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         discount_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_tax_rate_basis_points: { $ref: '#/components/schemas/OrderTaxRateBasisPoints' }
         tax_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         items: { type: array, items: { $ref: '#/components/schemas/OrderItemSnapshot' } }
 
     OrderSummary:
       type: object
-      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee]
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, order_tax_rate_basis_points, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee]
       properties:
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         discount_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_tax_rate_basis_points: { $ref: '#/components/schemas/OrderTaxRateBasisPoints' }
         tax_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         id: { type: integer, format: int64, minimum: 1 }
@@ -2176,12 +2195,13 @@ components:
     OrderDetail:
       type: object
       additionalProperties: false
-      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee, items, notes, status_history, assignment_history, system_activity]
+      required: [currency, subtotal_minor, order_discount_minor, discount_total_minor, order_tax_rate_basis_points, tax_total_minor, grand_total_minor, id, order_number, customer_id, assignee_id, order_date, priority, status, version, created_at, updated_at, completed_at, customer, assignee, items, notes, status_history, assignment_history, system_activity]
       properties:
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         subtotal_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         order_discount_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         discount_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+        order_tax_rate_basis_points: { $ref: '#/components/schemas/OrderTaxRateBasisPoints' }
         tax_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
         id: { type: integer, format: int64, minimum: 1 }

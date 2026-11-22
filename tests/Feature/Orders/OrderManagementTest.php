@@ -6,6 +6,7 @@ namespace Tests\Feature\Orders;
 
 use App\Constants\ApiErrorCode;
 use App\Enums\OrderPriority;
+use App\Enums\OrderStatus;
 use App\Models\AuditLog;
 use App\Models\Customer;
 use App\Models\Order;
@@ -224,6 +225,8 @@ final class OrderManagementTest extends TestCase
             ->assertJsonPath('data.pricing.tax_total_minor', 1_800);
         $this->postJson(self::ENDPOINT.'/preview', ['items' => [$overridden]])->assertForbidden();
         $this->postJson(self::ENDPOINT, self::payload($customer, [$overridden]))->assertForbidden();
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => [$item], 'order_tax_rate_basis_points' => 0])->assertForbidden();
+        $this->postJson(self::ENDPOINT, [...self::payload($customer, [$item]), 'order_tax_rate_basis_points' => 0])->assertForbidden();
         $this->assertDatabaseCount('order_creation_keys', 0);
         $this->postJson(self::ENDPOINT, self::payload($customer, [$item]))->assertCreated()
             ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 1_800)
@@ -279,6 +282,161 @@ final class OrderManagementTest extends TestCase
         }
 
         $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_order_total_tax_rounds_once_after_discounts_and_preview_matches_create(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $first = Product::factory()->create(['price' => '0.06', 'tax_rate' => '20.00']);
+        $second = Product::factory()->create(['price' => '0.06', 'tax_rate' => '40.00']);
+        $items = [
+            ['product_id' => $second->id, 'quantity' => 1],
+            ['product_id' => $first->id, 'quantity' => 1],
+        ];
+        $taxOverride = ['order_discount_minor' => 2, 'order_tax_rate_basis_points' => 1_000];
+
+        $this->useBearerFor($manager);
+        $preview = $this->postJson(self::ENDPOINT.'/preview', ['items' => $items, ...$taxOverride])
+            ->assertOk()
+            ->assertJsonPath('data.pricing.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.subtotal_minor', 12)
+            ->assertJsonPath('data.pricing.discount_total_minor', 2)
+            ->assertJsonPath('data.pricing.tax_total_minor', 1)
+            ->assertJsonPath('data.pricing.grand_total_minor', 11)
+            ->assertJsonPath('data.pricing.items.0.tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.items.1.tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.items.0.tax_minor', 0)
+            ->assertJsonPath('data.pricing.items.1.tax_minor', 1)
+            ->assertJsonPath('data.pricing.items.0.line_total_minor', 5)
+            ->assertJsonPath('data.pricing.items.1.line_total_minor', 6);
+
+        $this->assertDatabaseCount('orders', 0);
+        $created = $this->postJson(self::ENDPOINT, [...self::payload($customer, $items), ...$taxOverride])
+            ->assertCreated()
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.tax_total_minor', $preview->json('data.pricing.tax_total_minor'))
+            ->assertJsonPath('data.order.grand_total_minor', $preview->json('data.pricing.grand_total_minor'));
+        self::assertEquals($preview->json('data.pricing.items'), $created->json('data.order.items'));
+    }
+
+    public function test_tax_only_patch_preserves_the_override_when_omitted_and_restores_the_saved_rate_on_reset(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '100.00', 'tax_rate' => '18.00']);
+        $items = [['product_id' => $product->id, 'quantity' => 1]];
+        $this->useBearerFor($manager);
+
+        $this->postJson(self::ENDPOINT, self::payload($customer, $items))->assertCreated()
+            ->assertJsonStructure(['data' => ['order' => ['order_tax_rate_basis_points']]])
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', null)
+            ->assertJsonPath('data.order.tax_total_minor', 1_800);
+
+        $order = Order::query()->sole();
+        $order->items()->update(['base_tax_rate_basis_points' => null]);
+        $product->update(['tax_rate' => '20.00']);
+        $path = self::ENDPOINT.'/'.$order->id;
+
+        $this->patchJson($path, ['expected_version' => 1, 'order_tax_rate_basis_points' => 1_000])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 2)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.tax_total_minor', 1_000);
+        $this->postJson(self::ENDPOINT.'/preview', ['order_id' => $order->id, 'items' => $items])
+            ->assertOk()
+            ->assertJsonPath('data.pricing.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.tax_total_minor', 1_000);
+        $this->patchJson($path, ['expected_version' => 2, 'order_discount_minor' => 1_000])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 3)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.tax_total_minor', 900);
+        $this->patchJson($path, ['expected_version' => 3, 'order_tax_rate_basis_points' => 0])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 4)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.tax_total_minor', 0);
+
+        $preview = $this->postJson(self::ENDPOINT.'/preview', [
+            'order_id' => $order->id,
+            'items' => $items,
+            'order_tax_rate_basis_points' => null,
+        ])->assertOk()
+            ->assertJsonPath('data.pricing.order_tax_rate_basis_points', null)
+            ->assertJsonPath('data.pricing.items.0.tax_rate_basis_points', 1_800)
+            ->assertJsonPath('data.pricing.tax_total_minor', 1_620);
+        $reset = $this->patchJson($path, ['expected_version' => 4, 'order_tax_rate_basis_points' => null])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 5)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', null)
+            ->assertJsonPath('data.order.grand_total_minor', 10_620);
+        self::assertEquals($preview->json('data.pricing.items'), $reset->json('data.order.items'));
+
+        $audit = AuditLog::query()->where('action', 'order.updated')->latest('id')->firstOrFail();
+        self::assertSame($manager->id, $audit->actor_id);
+        self::assertSame(0, data_get($audit->before_values, 'order_tax_rate_basis_points'));
+        self::assertArrayHasKey('order_tax_rate_basis_points', $audit->after_values);
+        self::assertNull($audit->after_values['order_tax_rate_basis_points']);
+        self::assertSame(1_620, $audit->after_values['tax_total_minor']);
+    }
+
+    public function test_order_tax_override_rejects_invalid_rates_and_ambiguous_item_overrides(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $item = ['product_id' => $product->id, 'quantity' => 1];
+        $payload = self::payload($customer, [$item]);
+        $this->useBearerFor($manager);
+
+        foreach ([-1, 10_001, '1000', '  ', 10.5, false, []] as $rate) {
+            $this->postJson(self::ENDPOINT, [...$payload, 'order_tax_rate_basis_points' => $rate])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        }
+
+        $itemOverride = [...$item, 'tax_rate_basis_points' => 500];
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [$itemOverride]),
+            'order_tax_rate_basis_points' => 1_000,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        $this->assertDatabaseCount('orders', 0);
+
+        $this->postJson(self::ENDPOINT, [...$payload, 'order_tax_rate_basis_points' => 1_000])->assertCreated();
+        $order = Order::query()->sole();
+        $this->patchJson(self::ENDPOINT.'/'.$order->id, [
+            'expected_version' => 1,
+            'items' => [$itemOverride],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        $this->postJson(self::ENDPOINT.'/preview', [
+            'order_id' => $order->id,
+            'items' => [$itemOverride],
+            'order_tax_rate_basis_points' => null,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        self::assertSame(1, $order->refresh()->version);
+    }
+
+    public function test_order_total_tax_cannot_be_changed_after_confirmation_or_cancellation(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $this->useBearerFor($manager);
+
+        foreach ([OrderStatus::Confirmed, OrderStatus::Completed, OrderStatus::Cancelled] as $status) {
+            $order = Order::factory()->create(['status' => $status]);
+            $this->patchJson(self::ENDPOINT.'/'.$order->id, [
+                'expected_version' => $order->version,
+                'order_tax_rate_basis_points' => 1_000,
+            ])->assertUnprocessable()
+                ->assertJsonValidationErrors(['status'], 'errors.fields');
+            self::assertNull($order->refresh()->order_tax_rate_basis_points);
+        }
+
+        $this->assertDatabaseCount('audit_logs', 0);
     }
 
     public function test_admin_soft_delete_preserves_order_lines_and_audit_history(): void

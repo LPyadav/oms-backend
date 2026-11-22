@@ -220,6 +220,22 @@ All pricing values use integer minor units in the configured two-decimal
 business currency. For example, 2000 USD minor units represent $20.00.
 Keep ORDERS_CURRENCY aligned with the Catalog currency.
 
+The optional `order_tax_rate_basis_points` field sets one rate for the whole
+order. For example, `1000` means 10%. The server applies both discounts,
+calculates tax on the remaining order amount, rounds half-up once, and
+allocates the rounded amount across the items. Ties use product ID. The
+response includes the current order rate and each item's applied rate and
+tax amount. Their tax amounts sum to `tax_total_minor`.
+
+Create and new-order preview require `orders.update` for a numeric override.
+Draft and pending orders can update the rate by sending it with
+`expected_version`. The saved items are used when `items` is omitted.
+Omit the rate to keep the saved tax mode on edit and existing-order preview.
+An explicit `0` produces zero tax. An explicit `null` restores the saved item
+rates. New orders use catalog item rates when the order rate is omitted.
+Send legacy `items.*.tax_rate_basis_points` only when using item-based tax
+and omitting the order rate from the request.
+
 PATCH accepts expected_version in its JSON body. DELETE accepts it in the
 query string. A stale version returns 409 ORDER_VERSION_CONFLICT and the saved version in
 meta.version. An edit preview requires the complete items array. Set order_id

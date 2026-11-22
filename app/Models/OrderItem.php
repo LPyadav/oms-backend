@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $subtotal_minor
  * @property int $item_discount_minor
  * @property int $allocated_order_discount_minor
+ * @property int|null $base_tax_rate_basis_points
  * @property int $tax_rate_basis_points
  * @property int $tax_minor
  * @property int $line_total_minor
@@ -55,6 +56,7 @@ final class OrderItem extends Model
             'subtotal_minor' => 'integer',
             'item_discount_minor' => 'integer',
             'allocated_order_discount_minor' => 'integer',
+            'base_tax_rate_basis_points' => 'integer',
             'tax_rate_basis_points' => 'integer',
             'tax_minor' => 'integer',
             'line_total_minor' => 'integer',

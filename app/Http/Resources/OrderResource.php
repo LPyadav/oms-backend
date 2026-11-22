@@ -30,6 +30,7 @@ final class OrderResource extends JsonResource
             'subtotal_minor' => $this->subtotal_minor,
             'order_discount_minor' => $this->order_discount_minor,
             'discount_total_minor' => $this->discount_total_minor,
+            'order_tax_rate_basis_points' => $this->order_tax_rate_basis_points,
             'tax_total_minor' => $this->tax_total_minor,
             'grand_total_minor' => $this->grand_total_minor,
             'version' => $this->version,

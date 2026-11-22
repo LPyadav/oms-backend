@@ -67,6 +67,7 @@ final class OrderController extends Controller
             $request->items(),
             $request->orderDiscountMinor(),
             $request->orderId(),
+            $request->taxOverride(),
         );
 
         return $this->orderResponse->preview($pricing);
