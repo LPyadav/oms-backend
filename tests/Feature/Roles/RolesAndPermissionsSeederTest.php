@@ -7,8 +7,10 @@ namespace Tests\Feature\Roles;
 use App\Models\User;
 use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
+use App\Services\Roles\BuiltInAccessProvisioner;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
@@ -34,7 +36,29 @@ final class RolesAndPermissionsSeederTest extends TestCase
             $admin->getPermissionNames()->all(),
         );
         $this->assertDatabaseCount('roles', 3);
+        $this->assertDatabaseCount('permissions', 20);
+        self::assertCount(10, $manager->getPermissionNames());
+        self::assertCount(4, $staff->getPermissionNames());
         $this->assertDatabaseEmpty('users');
+    }
+
+    public function test_provisioning_migration_repairs_its_catalog_without_the_runtime_provisioner(): void
+    {
+        $admin = Role::findByName('admin', 'web');
+        Permission::findByName('roles.manage', 'web')->delete();
+        self::assertFalse($admin->checkPermissionTo('roles.manage'));
+
+        App::bind(BuiltInAccessProvisioner::class, static function (): never {
+            self::fail('The historical migration must not resolve the runtime access provisioner.');
+        });
+
+        $migration = '2026_11_21_170000_provision_built_in_access';
+        DB::table('migrations')->where('migration', $migration)->delete();
+
+        self::assertSame(0, Artisan::call('migrate', ['--path' => 'database/migrations/'.$migration.'.php']));
+
+        $this->assertDatabaseHas('permissions', ['name' => 'roles.manage', 'guard_name' => 'web']);
+        self::assertTrue($admin->refresh()->hasPermissionTo('roles.manage'));
     }
 
     public function test_provisioning_repairs_admin_and_preserves_configured_grants_on_upgrade(): void
