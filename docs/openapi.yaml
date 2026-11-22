@@ -4,7 +4,7 @@ info:
   title: OMS Backend API
   version: '0.1.0'
   description: |
-    Order Management System health, authentication, and Admin user, role, and permission management endpoints.
+    Order Management System health, authentication, access administration, customer management, and product catalog endpoints.
 
     All registered API routes share a default limit of 120 requests per
     minute per client IP. Requests rejected for missing or invalid
@@ -649,6 +649,405 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/customers:
+    get:
+      tags: [Customers]
+      operationId: listCustomers
+      summary: List customers
+      description: Requires an active user with customers.view. Customers are ordered by ID.
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 255 }
+          description: Literal substring search across name, email, and phone.
+        - name: is_active
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+          description: Filter by inactive (0) or active (1) customers. Omit to include both.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: One-based page number.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >-
+            Deployment defaults are 25 customers per page and a maximum of 100.
+            Configured through PAGINATION_CUSTOMERS_DEFAULT_PER_PAGE and PAGINATION_CUSTOMERS_MAX_PER_PAGE.
+      responses:
+        '200':
+          description: A page of customers and its pagination metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Customers]
+      operationId: createCustomer
+      summary: Create a customer
+      description: >-
+        Requires an active Admin with customers.manage.
+        The customer starts active. Creation and its audit entry are saved together.
+        Supplying is_active in the request body returns 422.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreCustomerRequest'
+      responses:
+        '201':
+          description: The customer was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
+  /api/customers/{customer}:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+    get:
+      tags: [Customers]
+      operationId: getCustomer
+      summary: Get a customer
+      description: Requires an active user with customers.view. Authorization precedes customer lookup.
+      responses:
+        '200':
+          description: The customer profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags: [Customers]
+      operationId: updateCustomer
+      summary: Update a customer profile
+      description: >-
+        Requires an active Admin with customers.manage.
+        Authorization precedes customer lookup. At least one supported profile field is required.
+        Send null to clear a contact field. Changed fields are audited in the same transaction.
+        Supplying is_active in the request body returns 422. Use the deactivate endpoint to change status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: The current customer profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
+  /api/customers/{customer}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+    patch:
+      tags: [Customers]
+      operationId: deactivateCustomer
+      summary: Deactivate a customer
+      description: >-
+        Requires an active Admin with customers.manage.
+        Authorization precedes customer lookup. The customer record remains available.
+        The status change is audited. Repeating deactivation returns the inactive record.
+      responses:
+        '200':
+          description: The inactive customer profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
+  /api/products:
+    get:
+      tags: [Products]
+      operationId: listProducts
+      summary: List products
+      description: Requires an active user with products.view. Products are ordered by ID.
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 255 }
+          description: Literal substring search across name and SKU.
+        - name: is_active
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+          description: Filter by inactive (0) or active (1) products. Omit to include both.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: One-based page number.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >-
+            Deployment defaults are 25 products per page and a maximum of 100.
+            Configured through PAGINATION_PRODUCTS_DEFAULT_PER_PAGE and PAGINATION_PRODUCTS_MAX_PER_PAGE.
+      responses:
+        '200':
+          description: A page of products and its pagination metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags: [Products]
+      operationId: createProduct
+      summary: Create a product
+      description: >-
+        Requires an active Admin with products.manage. The product starts active
+        with stock quantity and stock version both set to 0. Creation and its
+        audit entry are saved together.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreProductRequest'
+            example:
+              sku: WIDGET-01
+              name: Steel Widget
+              price: '249.95'
+              tax_rate: '18.00'
+      responses:
+        '201':
+          description: The product was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DuplicateProductSku'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
+  /api/products/{product}:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    get:
+      tags: [Products]
+      operationId: getProduct
+      summary: Get a product
+      description: Requires an active user with products.view. Authorization precedes product lookup.
+      responses:
+        '200':
+          description: The product and its current stock balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags: [Products]
+      operationId: updateProduct
+      summary: Update product details
+      description: >-
+        Requires an active Admin with products.manage. Authorization precedes
+        product lookup. Send at least one product detail in the body. Changed
+        fields are audited in the same transaction. Use the stock and deactivate
+        endpoints to change the balance and active status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: The current product details and stock balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/DuplicateProductSku'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
+  /api/products/{product}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    patch:
+      tags: [Products]
+      operationId: deactivateProduct
+      summary: Deactivate a product
+      description: >-
+        Requires an active Admin with products.manage. Authorization precedes
+        product lookup. Deactivation preserves the product and its stock balance.
+        The status change is audited. Repeating deactivation returns the inactive record.
+      responses:
+        '200':
+          description: The inactive product and its current stock balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
+  /api/products/{product}/stock:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    patch:
+      tags: [Products]
+      operationId: adjustProductStock
+      summary: Set the counted stock quantity
+      description: >-
+        Requires an active Admin with products.manage. Authorization precedes product
+        lookup. Send the absolute counted quantity and the stock version from the
+        current product response. A changed quantity increments the version and
+        records a signed stock movement in the same transaction. An unchanged quantity
+        with the current version succeeds without a movement. On a version conflict,
+        reload the product and reconcile the count before submitting again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustProductStockRequest'
+            example:
+              stock_quantity: 12
+              expected_stock_version: 0
+              reason: Physical count
+      responses:
+        '200':
+          description: The product with the current stock balance and version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/StaleProductStockVersion'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '503':
+          $ref: '#/components/responses/CatalogWriteContention'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -663,6 +1062,20 @@ components:
       required: true
       schema: { type: integer, format: int64, minimum: 1 }
       description: Role ID.
+
+    CustomerId:
+      name: customer
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+      description: Customer ID.
+
+    ProductId:
+      name: product
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+      description: Product ID.
 
   schemas:
     LoginRequest:
@@ -990,11 +1403,175 @@ components:
                   $ref: '#/components/schemas/AdminUser'
             meta: { type: 'null' }
 
+    CustomerProfileFields:
+      type: object
+      not:
+        required: [is_active]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        email: { type: [string, 'null'], format: email, maxLength: 254 }
+        phone: { type: [string, 'null'], maxLength: 32 }
+        address: { type: [string, 'null'], maxLength: 1000 }
+
+    StoreCustomerRequest:
+      allOf:
+        - $ref: '#/components/schemas/CustomerProfileFields'
+        - required: [name]
+
+    UpdateCustomerRequest:
+      allOf:
+        - $ref: '#/components/schemas/CustomerProfileFields'
+        - anyOf:
+            - required: [name]
+            - required: [email]
+            - required: [phone]
+            - required: [address]
+
+    Customer:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, phone, address, is_active]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        email: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+        address: { type: [string, 'null'] }
+        is_active: { type: boolean }
+
+    CustomerListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [customers]
+              properties:
+                customers:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Customer'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    CustomerResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [customer]
+              properties:
+                customer:
+                  $ref: '#/components/schemas/Customer'
+            meta: { type: 'null' }
+
+    ProductMetadataFields:
+      type: object
+      properties:
+        sku:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+          description: ASCII SKU. The server trims outer whitespace and normalizes it to uppercase.
+        name: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+        price:
+          type: string
+          pattern: '^[0-9]{1,10}(?:\.[0-9]{1,2})?$'
+          description: A decimal string between 0 and 9999999999.99 with up to two decimal places.
+        tax_rate:
+          type: string
+          pattern: '^(?:[0-9]{1,2}(?:\.[0-9]{1,2})?|100(?:\.0{1,2})?)$'
+          description: A percentage as a decimal string between 0 and 100 with up to two decimal places.
+      not:
+        anyOf:
+          - required: [stock_quantity]
+          - required: [stock_version]
+          - required: [is_active]
+          - required: [opening_stock]
+
+    StoreProductRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProductMetadataFields'
+        - required: [sku, name, price]
+          properties:
+            tax_rate: { default: '0.00' }
+
+    UpdateProductRequest:
+      allOf:
+        - $ref: '#/components/schemas/ProductMetadataFields'
+        - anyOf:
+            - required: [sku]
+            - required: [name]
+            - required: [price]
+            - required: [tax_rate]
+
+    AdjustProductStockRequest:
+      type: object
+      required: [stock_quantity, expected_stock_version, reason]
+      properties:
+        stock_quantity:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+          description: Absolute counted stock quantity.
+        expected_stock_version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Stock version from the current product response.
+        reason: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+
+    Product:
+      type: object
+      additionalProperties: false
+      required: [id, sku, name, price, tax_rate, stock_quantity, stock_version, is_active]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        sku: { type: string, maxLength: 64, pattern: '^[A-Z0-9][A-Z0-9._-]*$' }
+        name: { type: string }
+        price: { type: string, pattern: '^\d+\.\d{2}$', examples: ['249.95'] }
+        tax_rate: { type: string, pattern: '^\d+\.\d{2}$', examples: ['18.00'] }
+        stock_quantity: { type: integer, minimum: 0, maximum: 2147483647 }
+        stock_version: { type: integer, format: int64, minimum: 0 }
+        is_active: { type: boolean }
+
+    ProductListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [products]
+              properties:
+                products:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Product'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    ProductResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [product]
+              properties:
+                product:
+                  $ref: '#/components/schemas/Product'
+            meta: { type: 'null' }
+
     ErrorEnvelope:
       allOf:
         - $ref: '#/components/schemas/ApiEnvelope'
         - properties:
-            meta: { type: 'null' }
             success: { const: false }
             data: { type: 'null' }
             errors:
@@ -1014,6 +1591,7 @@ components:
                     - LAST_ACTIVE_ADMIN
                     - RATE_LIMIT_EXCEEDED
                     - REQUEST_FAILED
+                    - WRITE_CONTENTION
                     - INTERNAL_SERVER_ERROR
                 fields:
                   type: object
@@ -1117,6 +1695,52 @@ components:
                       fields:
                         required: [email]
 
+    DuplicateProductSku:
+      description: A product already has the normalized SKU.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ValidationErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      fields:
+                        required: [sku]
+
+    StaleProductStockVersion:
+      description: >-
+        The submitted stock version is stale. The response includes the version
+        observed when the update was rejected. Refresh the product and reconcile
+        the count before retrying.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ValidationErrorEnvelope'
+              - properties:
+                  meta:
+                    type: object
+                    additionalProperties: false
+                    required: [stock_version]
+                    properties:
+                      stock_version: { type: integer, format: int64, minimum: 0 }
+                  errors:
+                    properties:
+                      fields:
+                        required: [expected_stock_version]
+          example:
+            success: false
+            message: The submitted data is invalid.
+            data: null
+            errors:
+              code: VALIDATION_FAILED
+              fields:
+                expected_stock_version:
+                  - The stock changed since it was last read. Fetch the product and try again.
+            meta:
+              stock_version: 2
+
     DuplicateRoleName:
       description: A role already has the submitted name.
       content:
@@ -1183,3 +1807,30 @@ components:
                   errors:
                     properties:
                       code: { const: INTERNAL_SERVER_ERROR }
+
+    CatalogWriteContention:
+      description: The write could not acquire its database locks. Wait for Retry-After before retrying.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying the Catalog write.
+          required: true
+          schema: { type: integer, minimum: 1 }
+        X-Request-ID:
+          description: Request ID for tracing the contention.
+          required: true
+          schema: { type: string, format: uuid }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - properties:
+                  errors:
+                    properties:
+                      code: { const: WRITE_CONTENTION }
+                  meta:
+                    type: object
+                    additionalProperties: false
+                    required: [request_id]
+                    properties:
+                      request_id: { type: string, format: uuid }

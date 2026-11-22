@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Customers\CustomerController;
+use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
@@ -27,6 +29,44 @@ Route::middleware('auth:sanctum')->group(static function (): void {
 
     Route::get('/me', [AuthController::class, 'me'])
         ->name('auth.me');
+
+    Route::prefix('customers')->name('customers.')->group(static function (): void {
+        Route::get('/', [CustomerController::class, 'index'])->name('index');
+        Route::post('/', [CustomerController::class, 'store'])->name('store');
+
+        Route::get('/{customer}', [CustomerController::class, 'show'])
+            ->whereNumber('customer')
+            ->name('show');
+
+        Route::patch('/{customer}', [CustomerController::class, 'update'])
+            ->whereNumber('customer')
+            ->name('update');
+
+        Route::patch('/{customer}/deactivate', [CustomerController::class, 'deactivate'])
+            ->whereNumber('customer')
+            ->name('deactivate');
+    });
+
+    Route::prefix('products')->name('products.')->group(static function (): void {
+        Route::get('/', [ProductController::class, 'index'])->name('index');
+        Route::post('/', [ProductController::class, 'store'])->name('store');
+
+        Route::get('/{product}', [ProductController::class, 'show'])
+            ->whereNumber('product')
+            ->name('show');
+
+        Route::patch('/{product}', [ProductController::class, 'update'])
+            ->whereNumber('product')
+            ->name('update');
+
+        Route::patch('/{product}/deactivate', [ProductController::class, 'deactivate'])
+            ->whereNumber('product')
+            ->name('deactivate');
+
+        Route::patch('/{product}/stock', [ProductController::class, 'adjustStock'])
+            ->whereNumber('product')
+            ->name('stock.update');
+    });
 
     Route::prefix('admin/users')->name('admin.users.')->group(static function (): void {
         Route::get('/', [AdminUserController::class, 'index'])

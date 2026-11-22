@@ -6,10 +6,13 @@ namespace App\Exceptions;
 
 use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
+use App\Exceptions\Catalog\CatalogWriteContentionException;
+use App\Exceptions\Inventory\StockVersionConflictException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
@@ -39,10 +42,25 @@ final readonly class ApiExceptionRenderer
             return $response;
         }
 
+        if ($exception instanceof CatalogWriteContentionException) {
+            return $this->apiResponse->error(
+                message: Lang::string('api.errors.write_contention'),
+                code: ApiErrorCode::WRITE_CONTENTION,
+                status: Response::HTTP_SERVICE_UNAVAILABLE,
+                headers: [
+                    ...$this->forwardedHeaders($response),
+                    'retry-after' => Config::integer('catalog.retry_after_seconds'),
+                    'x-request-id' => $exception->requestId,
+                ],
+                meta: ['request_id' => $exception->requestId],
+            );
+        }
+
         $status = match (true) {
             $exception instanceof InvalidCredentialsException,
             $exception instanceof AuthenticationException => Response::HTTP_UNAUTHORIZED,
-            $exception instanceof LastActiveAdminException => Response::HTTP_CONFLICT,
+            $exception instanceof LastActiveAdminException,
+            $exception instanceof StockVersionConflictException => Response::HTTP_CONFLICT,
             $exception instanceof ValidationException && ! $response->isClientError() => Response::HTTP_UNPROCESSABLE_ENTITY,
             default => $response->getStatusCode(),
         };
@@ -60,6 +78,7 @@ final readonly class ApiExceptionRenderer
                 ApiErrorCode::LAST_ACTIVE_ADMIN,
                 'api.users.last_active_admin',
             ],
+            $exception instanceof StockVersionConflictException,
             $exception instanceof ValidationException => [
                 ApiErrorCode::VALIDATION_FAILED,
                 'api.errors.validation_failed',
@@ -77,10 +96,17 @@ final readonly class ApiExceptionRenderer
             message: Lang::string($messageKey),
             code: $code,
             status: $status,
-            fields: $exception instanceof ValidationException
-                ? $exception->errors()
-                : [],
+            fields: match (true) {
+                $exception instanceof StockVersionConflictException => [
+                    'expected_stock_version' => [Lang::string('api.products.stock_version_conflict')],
+                ],
+                $exception instanceof ValidationException => $exception->errors(),
+                default => [],
+            },
             headers: $headers,
+            meta: $exception instanceof StockVersionConflictException
+                ? ['stock_version' => $exception->currentStockVersion]
+                : null,
         );
     }
 

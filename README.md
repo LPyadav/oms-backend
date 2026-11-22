@@ -100,6 +100,31 @@ their initial grants. Existing Manager and Staff selections are preserved.
 The local demo command prints a generated password when it creates an account.
 Existing demo accounts keep their passwords.
 
+### 5. Seed the optional demo catalog
+
+After applying the migrations to your local development database, run these
+commands from the repository root. Use a second terminal if the API is running.
+
+```powershell
+php artisan db:seed --class=CustomerSeeder
+php artisan db:seed --class=ProductSeeder
+```
+
+On a fresh database, the seeders add two demo customers and three demo products,
+including active and inactive records. Rerunning them preserves records with
+matching demo email addresses or SKUs, including current stock. New products
+with positive opening stock receive a stock movement entry.
+Rolling back the opening-stock backfill preserves the ledger entries it wrote.
+
+Catalog writes make up to two transaction attempts on database contention by
+default. Set `CATALOG_WRITE_ATTEMPTS` to an integer from 1 to 5 to change the
+total attempts. Each attempt uses the database connection's lock wait timeout.
+When attempts are exhausted, the API returns `503` with error
+code `WRITE_CONTENTION` and a request ID in both `X-Request-ID` and
+`meta.request_id`. The `Retry-After` header uses
+`CATALOG_WRITE_RETRY_AFTER_SECONDS`, which defaults to one second and accepts
+values from 1 to 60.
+
 ## API endpoints
 
 Successful and failed JSON responses use the same envelope with `success`,
