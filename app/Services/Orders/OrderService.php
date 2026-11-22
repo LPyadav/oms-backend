@@ -30,6 +30,7 @@ use LogicException;
 use RuntimeException;
 
 /**
+ * @phpstan-import-type OrderListCriteria from OrderListQuery
  * @phpstan-import-type LineInput from OrderPricingService
  * @phpstan-import-type PricedLine from OrderPricingService
  * @phpstan-import-type PricedOrder from OrderPricingService
@@ -73,21 +74,19 @@ final readonly class OrderService
 
     public function __construct(
         private OrderPolicy $policy,
+        private OrderListQuery $listQuery,
         private OrderPricingService $pricing,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
     ) {}
 
     /**
+     * @param  OrderListCriteria  $criteria
      * @return LengthAwarePaginator<int, Order>
      */
-    public function paginate(User $actor, int $perPage, int $page): LengthAwarePaginator
+    public function paginate(User $actor, array $criteria): LengthAwarePaginator
     {
-        return $this->visibleOrders($actor)
-            ->with(['customer', 'assignee:id,name'])
-            ->orderByDesc('order_date')
-            ->orderByDesc('id')
-            ->paginate(perPage: $perPage, page: $page);
+        return $this->listQuery->paginate($this->visibleOrders($actor), $criteria);
     }
 
     public function find(User $actor, string $orderId): Order

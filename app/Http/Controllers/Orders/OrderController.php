@@ -27,11 +27,7 @@ final class OrderController extends Controller
 
     public function index(ListOrdersRequest $request): JsonResponse
     {
-        $orders = $this->orderService->paginate(
-            $this->actor($request),
-            $request->perPage(),
-            $request->page(),
-        );
+        $orders = $this->orderService->paginate($this->actor($request), $request->criteria());
 
         return $this->orderResponse->list($orders, $request);
     }

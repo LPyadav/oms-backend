@@ -827,8 +827,46 @@ paths:
       summary: List visible orders
       description: >-
         Requires orders.view.any or orders.view.assigned. Assigned-only readers are scoped to their own orders.
-        Results are ordered by order date descending, then ID descending.
+        Orders can be searched, filtered, and sorted within the caller's access scope.
+        Dates are inclusive. The default order is order_date descending, then ID descending.
       parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 255 }
+          description: Match a literal substring of the order number, customer name or email, product snapshot name or SKU, or assigned employee name.
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] }
+        - name: priority
+          in: query
+          schema: { $ref: '#/components/schemas/OrderPriority' }
+        - name: customer_id
+          in: query
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Match the customer ID.
+        - name: assignee_id
+          in: query
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Match the assigned employee ID.
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+          description: Include orders on or after this business date.
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+          description: Include orders on or before this business date. Must be on or after date_from if both are supplied.
+        - name: sort
+          in: query
+          schema: { type: string, enum: [order_date, total, status, priority, customer], default: order_date }
+          description: >-
+            Total uses stored grand total in minor units for the configured business currency.
+            Customer uses its current name. Ascending status order is Draft, Pending,
+            Confirmed, Processing, Ready, Completed, Cancelled. Ascending priority is Low, Normal, High, Urgent.
+        - name: direction
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+          description: Sort direction also applies to the order ID tie-breaker.
         - name: page
           in: query
           schema: { type: integer, minimum: 1, default: 1 }

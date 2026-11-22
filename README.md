@@ -167,6 +167,16 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | PATCH | /api/orders/{order} | Edit a draft or pending order |
 | DELETE | /api/orders/{order} | Soft-delete an eligible order |
 
+Use search to match order number, customer name or email, product name or SKU
+as stored on the order, and assigned employee name. Combine it with status,
+priority, customer_id, assignee_id, date_from, and date_to. Date bounds
+are inclusive and can be supplied independently.
+
+Pass sort as order_date, total, status, priority, or customer and direction
+as asc or desc. Default sort is order_date desc, with order ID as a tie-breaker.
+page and per_page control server-side pagination. The default page size is 25
+and the default maximum is 100. Both are configurable.
+
 Order writes accept JSON. Send an active customer ID, an order date, and a
 non-empty list of distinct product IDs and positive quantities to create a
 draft. Optional fields include priority, an active assignee, an initial
