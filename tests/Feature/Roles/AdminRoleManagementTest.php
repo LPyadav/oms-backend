@@ -7,8 +7,8 @@ namespace Tests\Feature\Roles;
 use App\Constants\ApiErrorCode;
 use App\Models\AccessAuditLog;
 use App\Models\User;
-use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -35,7 +35,6 @@ final class AdminRoleManagementTest extends TestCase
             'rate_limits.api.per_ip' => 20,
         ]);
 
-        $this->seed(RolesAndPermissionsSeeder::class);
     }
 
     public function test_admin_can_list_paginated_roles_and_available_permissions_for_the_web_guard(): void
@@ -71,11 +70,41 @@ final class AdminRoleManagementTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.permissions', $permissionNames)
+            ->assertJsonPath('data.admin_only_permissions', [
+                'audit.view',
+                'customers.manage',
+                'products.manage',
+                'roles.manage',
+                'users.manage',
+            ])
             ->assertJsonPath('meta', null);
 
         $this->getJson(self::ROLES_ENDPOINT.'?page=0&per_page=3')
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['page', 'per_page'], 'errors.fields');
+    }
+
+    public function test_custom_roles_cannot_acquire_new_admin_only_permissions(): void
+    {
+        $this->authenticateAs('admin');
+        $role = Role::create(['name' => 'Warehouse Operator', 'guard_name' => 'web']);
+        $path = self::ROLES_ENDPOINT.'/'.$role->id.'/permissions';
+
+        $this->patchJson($path, ['permissions' => ['users.manage', 'roles.manage']])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['permissions'], 'errors.fields');
+
+        self::assertCount(0, $role->refresh()->permissions);
+        $this->assertDatabaseCount('access_audit_logs', 0);
+
+        $role->givePermissionTo('users.manage');
+
+        $this->patchJson($path, ['permissions' => ['users.manage', 'orders.view.any']])
+            ->assertOk();
+
+        $this->patchJson($path, ['permissions' => ['orders.view.any']])
+            ->assertOk()
+            ->assertJsonPath('data.role.permissions', ['orders.view.any']);
     }
 
     public function test_admin_can_create_and_rename_a_custom_role_without_altering_its_grants(): void
@@ -153,23 +182,87 @@ final class AdminRoleManagementTest extends TestCase
     }
 
     #[DataProvider('builtInRoles')]
-    public function test_admin_cannot_rename_or_replace_permissions_on_built_in_roles(string $name): void
+    public function test_admin_cannot_rename_built_in_roles(string $name): void
     {
         $this->authenticateAs('admin');
         $role = Role::findByName($name, 'web');
-        $permissions = $role->permissions->modelKeys();
-        $path = self::ROLES_ENDPOINT.'/'.$role->id;
 
-        $this->patchJson($path, ['name' => 'Replacement'])
-            ->assertForbidden()
-            ->assertJsonPath('errors.code', ApiErrorCode::ACCESS_FORBIDDEN);
-        $this->patchJson($path.'/permissions', ['permissions' => []])
+        $this->patchJson(self::ROLES_ENDPOINT.'/'.$role->id, ['name' => 'Replacement'])
             ->assertForbidden()
             ->assertJsonPath('errors.code', ApiErrorCode::ACCESS_FORBIDDEN);
 
         self::assertSame($name, $role->refresh()->name);
+        $this->assertDatabaseCount('access_audit_logs', 0);
+    }
+
+    public function test_admin_role_permissions_are_protected(): void
+    {
+        $this->authenticateAs('admin');
+        $role = Role::findByName('admin', 'web');
+        $permissions = $role->permissions->modelKeys();
+
+        $this->patchJson(self::ROLES_ENDPOINT.'/'.$role->id.'/permissions', ['permissions' => []])
+            ->assertForbidden()
+            ->assertJsonPath('errors.code', ApiErrorCode::ACCESS_FORBIDDEN);
+
         self::assertSame($permissions, $role->permissions->modelKeys());
         $this->assertDatabaseCount('access_audit_logs', 0);
+    }
+
+    #[DataProvider('editableBuiltInRoles')]
+    public function test_admin_can_check_and_uncheck_permissions_for_an_existing_role(
+        string $name,
+        string $unchecked,
+        string $checked,
+    ): void {
+        $role = Role::findByName($name, 'web');
+        $before = $role->permissions->pluck('name')->sort(SORT_STRING)->values()->all();
+        self::assertContains($unchecked, $before);
+        self::assertNotContains($checked, $before);
+
+        $selected = array_values(array_diff($before, [$unchecked]));
+        $selected[] = $checked;
+        sort($selected, SORT_STRING);
+
+        $member = User::factory()->create()->assignRole($role);
+        $token = $member->createToken('Role member test')->plainTextToken;
+        $this->withToken($token)->getJson('/api/me')
+            ->assertOk()
+            ->assertJsonPath('data.user.permissions', $before);
+
+        Auth::forgetGuards();
+        $actor = $this->authenticateAs('admin');
+        $path = self::ROLES_ENDPOINT.'/'.$role->id.'/permissions';
+
+        $this->patchJson($path, ['permissions' => [...$selected, 'roles.manage']])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['permissions'], 'errors.fields');
+        $this->patchJson($path, ['permissions' => $selected])
+            ->assertOk()
+            ->assertJsonPath('data.role.permissions', $selected);
+
+        $this->getJson(self::ROLES_ENDPOINT)
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $role->id,
+                'name' => $name,
+                'permissions' => $selected,
+            ]);
+
+        Auth::forgetGuards();
+        $this->withToken($token)->getJson('/api/me')
+            ->assertOk()
+            ->assertJsonPath('data.user.permissions', $selected);
+
+        self::assertFalse($member->refresh()->can($unchecked));
+        self::assertTrue($member->can($checked));
+        $this->assertDatabaseCount('access_audit_logs', 1);
+        $this->assertDatabaseHas('access_audit_logs', [
+            'actor_id' => $actor->id,
+            'target_type' => 'role',
+            'target_id' => $role->id,
+            'action' => 'role.permissions.replaced',
+        ]);
     }
 
     public function test_admin_can_replace_permissions_and_audit_the_change_once(): void
@@ -327,6 +420,17 @@ final class AdminRoleManagementTest extends TestCase
             'admin' => ['admin'],
             'manager' => ['manager'],
             'staff' => ['staff'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string, string, string}>
+     */
+    public static function editableBuiltInRoles(): array
+    {
+        return [
+            'manager' => ['manager', 'orders.assign', 'orders.notes.create.assigned'],
+            'staff' => ['staff', 'orders.view.assigned', 'orders.assign'],
         ];
     }
 

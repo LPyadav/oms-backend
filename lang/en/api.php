@@ -26,6 +26,7 @@ return [
         'created' => 'Role created successfully.',
         'updated' => 'Role updated successfully.',
         'permissions_updated' => 'Role permissions updated successfully.',
+        'admin_only_permissions' => 'These permissions are reserved for the built-in Admin role: :permissions.',
     ],
 
     'permissions' => [

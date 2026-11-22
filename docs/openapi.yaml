@@ -573,15 +573,17 @@ paths:
     patch:
       tags: [Admin Roles]
       operationId: replaceAdminRolePermissions
-      summary: Replace a custom role's permissions
+      summary: Replace a role's selected permissions
       description: >-
         Requires an active Admin with the roles.manage permission.
         Authorization runs before the target role is looked up.
-        Replaces the full set of permissions on a custom role.
-        An empty array clears the set. Each change records the acting Admin, role,
-        and before and after permissions in the same transaction. An unchanged set
-        returns the role without an additional audit entry. Permissions on the
-        built-in admin, manager, and staff roles are protected.
+        Replaces the complete checked set for the Manager, Staff, or a custom role.
+        Omitted grants are removed from the role. An empty array clears its grants.
+        Each change records the acting Admin, role, and before and after permissions
+        in the same transaction. Saving the current set leaves the audit history
+        unchanged. The built-in Admin role's grants are protected.
+        Existing Admin-only grants on editable roles may be kept or removed.
+        Adding a new Admin-only grant to an editable role returns 422.
       requestBody:
         required: true
         content:
@@ -611,7 +613,7 @@ paths:
         '404':
           $ref: '#/components/responses/ResourceNotFound'
         '422':
-          description: The permissions list is missing, malformed, or contains invalid names.
+          description: The permissions list is missing, malformed, contains invalid names, or adds an Admin-only grant.
           content:
             application/json:
               schema:
@@ -625,11 +627,15 @@ paths:
     get:
       tags: [Admin Roles]
       operationId: listAdminPermissions
-      summary: List assignable permissions
-      description: Requires an active Admin with the roles.manage permission. Returns permission names defined for the application's guard.
+      summary: List the permission catalog
+      description: >-
+        Requires an active Admin with the roles.manage permission.
+        Returns all permission names for the application's guard.
+        Use each role's permissions array to determine the checked options.
+        Admin-only keys are identified for display on editable roles.
       responses:
         '200':
-          description: The list of available permission names.
+          description: The permission catalog and its Admin-only subset.
           content:
             application/json:
               schema:
@@ -921,10 +927,13 @@ components:
             data:
               type: object
               additionalProperties: false
-              required: [permissions]
+              required: [permissions, admin_only_permissions]
               properties:
                 permissions:
                   $ref: '#/components/schemas/PermissionNames'
+                admin_only_permissions:
+                  $ref: '#/components/schemas/PermissionNames'
+                  description: Subset of the catalog reserved for the built-in Admin role.
             meta: { type: 'null' }
 
     AdminUser:

@@ -67,7 +67,7 @@ final class CurrentUserTest extends TestCase
         $user = User::factory()->create();
         $guardName = Guard::getDefaultName($user);
 
-        $role = Role::findOrCreate('staff', $guardName);
+        $role = Role::findOrCreate('Assigned Orders Reviewer', $guardName);
         $inheritedPermission = Permission::findOrCreate('orders.view.assigned', $guardName);
         $sharedPermission = Permission::findOrCreate('orders.status.update.assigned', $guardName);
         $directPermission = Permission::findOrCreate('orders.notes.create.assigned', $guardName);
@@ -86,7 +86,7 @@ final class CurrentUserTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('data.user.id', $user->id)
-            ->assertJsonPath('data.user.roles', ['staff'])
+            ->assertJsonPath('data.user.roles', [$role->name])
             ->assertJsonPath('data.user.permissions', [
                 'orders.notes.create.assigned',
                 'orders.status.update.assigned',

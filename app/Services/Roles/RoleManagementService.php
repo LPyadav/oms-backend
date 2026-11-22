@@ -26,7 +26,17 @@ use Symfony\Component\HttpFoundation\Response;
 
 final readonly class RoleManagementService
 {
-    private const array BUILT_IN_ROLE_NAMES = ['admin', 'manager', 'staff'];
+    private const string ADMIN_ROLE_NAME = 'admin';
+
+    private const array BUILT_IN_ROLE_NAMES = [self::ADMIN_ROLE_NAME, 'manager', 'staff'];
+
+    private const array ADMIN_ONLY_PERMISSION_NAMES = [
+        'audit.view',
+        'customers.manage',
+        'products.manage',
+        'roles.manage',
+        'users.manage',
+    ];
 
     public function __construct(
         private RolePolicy $rolePolicy,
@@ -81,7 +91,11 @@ final readonly class RoleManagementService
                 throw new AuthorizationException;
             }
 
-            $role = $this->lockCustomRole($roleId, $guardName);
+            $role = $this->lockRole($roleId, $guardName);
+            if ($this->isBuiltInName($role->name)) {
+                throw new AuthorizationException;
+            }
+
             $beforeName = $role->name;
             $role->name = $this->customRoleName($name);
 
@@ -101,7 +115,7 @@ final readonly class RoleManagementService
     }
 
     /**
-     * @return list<string>
+     * @return array{permissions: list<string>, admin_only_permissions: list<string>}
      */
     public function permissions(User $actor): array
     {
@@ -117,7 +131,12 @@ final readonly class RoleManagementService
             ->map(static fn (Permission $permission): string => $permission->name)
             ->sort(SORT_STRING);
 
-        return array_values($names->all());
+        $permissions = array_values($names->all());
+
+        return [
+            'permissions' => $permissions,
+            'admin_only_permissions' => array_values(array_intersect($permissions, self::ADMIN_ONLY_PERMISSION_NAMES)),
+        ];
     }
 
     /**
@@ -133,7 +152,11 @@ final readonly class RoleManagementService
                 throw new AuthorizationException;
             }
 
-            $role = $this->lockCustomRole($roleId, $guardName);
+            $role = $this->lockRole($roleId, $guardName);
+            if (Str::lower($role->name) === self::ADMIN_ROLE_NAME) {
+                throw new AuthorizationException;
+            }
+
             $permissions = Permission::query()
                 ->where('guard_name', $guardName)
                 ->whereIn('name', $permissionNames)
@@ -150,6 +173,20 @@ final readonly class RoleManagementService
             }
 
             $currentPermissions = $role->permissions->sortBy('id')->values();
+            $adminOnlyAdditions = array_diff(
+                array_intersect($permissionNames, self::ADMIN_ONLY_PERMISSION_NAMES),
+                $currentPermissions->pluck('name')->all(),
+            );
+
+            if ($adminOnlyAdditions !== []) {
+                sort($adminOnlyAdditions, SORT_STRING);
+
+                throw ValidationException::withMessages([
+                    'permissions' => Lang::string('api.roles.admin_only_permissions', [
+                        'permissions' => implode(', ', $adminOnlyAdditions),
+                    ]),
+                ]);
+            }
 
             if ($currentPermissions->modelKeys() === $permissions->modelKeys()) {
                 return $role;
@@ -176,7 +213,7 @@ final readonly class RoleManagementService
         });
     }
 
-    private function lockCustomRole(int|string $roleId, string $guardName): Role
+    private function lockRole(int|string $roleId, string $guardName): Role
     {
         $role = Role::query()
             ->where('guard_name', $guardName)
@@ -185,10 +222,6 @@ final readonly class RoleManagementService
 
         if ($role->guard_name !== $guardName) {
             throw (new ModelNotFoundException)->setModel(Role::class, [$roleId]);
-        }
-
-        if ($this->isBuiltInName($role->name)) {
-            throw new AuthorizationException;
         }
 
         return $role;
@@ -215,12 +248,12 @@ final readonly class RoleManagementService
     private function lockActor(User $actor, string $guardName): User
     {
         $adminRole = Role::query()
-            ->where('name', 'admin')
+            ->where('name', self::ADMIN_ROLE_NAME)
             ->where('guard_name', $guardName)
             ->lockForUpdate()
             ->first();
 
-        if ($adminRole === null || $adminRole->name !== 'admin' || $adminRole->guard_name !== $guardName) {
+        if ($adminRole === null || $adminRole->name !== self::ADMIN_ROLE_NAME || $adminRole->guard_name !== $guardName) {
             throw new LogicException('The Admin role must be seeded before changing roles.');
         }
 

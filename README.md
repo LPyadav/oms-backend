@@ -91,14 +91,14 @@ rebuild it on deployment. [Laravel configuration caching](https://laravel.com/do
 ```powershell
 php artisan migrate
 php artisan migrate:status
-php artisan db:seed --class=RolesAndPermissionsSeeder
 php artisan oms:create-demo-users --assign-existing
 php artisan serve --host=127.0.0.1 --port=8000
 ```
 
-The seeder installs the built-in Admin, Manager, and Staff roles and their
-permission definitions. The local demo command prints a generated password
-when it creates an account. Existing demo accounts keep their passwords.
+Migrations install the permission catalog and any missing built-in roles with
+their initial grants. Existing Manager and Staff selections are preserved.
+The local demo command prints a generated password when it creates an account.
+Existing demo accounts keep their passwords.
 
 ## API endpoints
 
@@ -144,15 +144,25 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | GET | /api/admin/roles | List roles and their assigned permissions |
 | POST | /api/admin/roles | Create a custom role |
 | PATCH | /api/admin/roles/{role} | Rename a custom role |
-| PATCH | /api/admin/roles/{role}/permissions | Replace a custom role's assigned permissions |
-| GET | /api/admin/permissions | List the predefined permission names |
+| PATCH | /api/admin/roles/{role}/permissions | Update the checked permissions for a Manager, Staff, or custom role |
+| GET | /api/admin/permissions | List permission names and the Admin-only subset |
 
 These endpoints require an active Admin and a valid Bearer token. User
 management requires `users.manage`. Role and permission management requires
 `roles.manage`, and replacing a user's roles requires both grants.
-The built-in roles are protected from renaming and permission changes.
+The built-in roles keep their names. The built-in Admin role's grants are
+protected.
 The enable and disable requests take no body. On reactivation the user keeps
 their roles and must sign in for a new Bearer token.
+
+Use `GET /api/admin/permissions` for all checkbox options and match them
+against each role's `permissions` array from `GET /api/admin/roles` to show
+its checked values. Save the full checked list as `{"permissions":[...]}`.
+Omitted grants are removed from that role, and an empty list clears all its
+grants. The change applies to users assigned to the role and is audited.
+The catalog's `data.admin_only_permissions` identifies restricted options.
+Editable roles can retain or remove any existing grants in that subset.
+Adding a new one returns `422`.
 
 The [OpenAPI contract](docs/openapi.yaml) describes request bodies, pagination,
 and the shared response schemas.

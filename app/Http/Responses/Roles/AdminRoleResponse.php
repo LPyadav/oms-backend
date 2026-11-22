@@ -54,13 +54,13 @@ final readonly class AdminRoleResponse
     }
 
     /**
-     * @param  list<string>  $permissions
+     * @param  array{permissions: list<string>, admin_only_permissions: list<string>}  $catalog
      */
-    public function permissions(array $permissions): JsonResponse
+    public function permissions(array $catalog): JsonResponse
     {
         return $this->apiResponse->success(
             message: Lang::string('api.permissions.list_retrieved'),
-            data: ['permissions' => $permissions],
+            data: $catalog,
         );
     }
 
