@@ -303,6 +303,88 @@ final class OrderListingTest extends TestCase
         }
     }
 
+    public function test_deep_date_pages_preserve_totals_and_id_ties_in_both_directions(): void
+    {
+        $this->authenticateAsManager();
+
+        $firstTie = Order::factory()->create(['order_date' => '2026-11-22']);
+        $earliest = Order::factory()->create(['order_date' => '2026-11-20']);
+        $latest = Order::factory()->create(['order_date' => '2026-11-24']);
+        $secondTie = Order::factory()->create(['order_date' => '2026-11-22']);
+        $thirdTie = Order::factory()->create(['order_date' => '2026-11-22']);
+        Order::factory()->create(['order_date' => '2026-11-22'])->delete();
+
+        foreach ([
+            'asc' => [[$secondTie->id, $thirdTie->id], [$latest->id], []],
+            'desc' => [[$secondTie->id, $firstTie->id], [$earliest->id], []],
+        ] as $direction => $pages) {
+            foreach ($pages as $index => $ids) {
+                $page = $index + 2;
+                $response = $this->listing([
+                    'sort' => 'order_date',
+                    'direction' => $direction,
+                    'per_page' => 2,
+                    'page' => $page,
+                ])->assertOk()->assertJsonPath('meta', [
+                    'current_page' => $page,
+                    'per_page' => 2,
+                    'total' => 5,
+                    'last_page' => 3,
+                ]);
+
+                self::assertSame($ids, $response->json('data.orders.*.id'), "{$direction} page {$page}");
+            }
+        }
+    }
+
+    public function test_deep_date_page_applies_staff_scope_and_search_before_paging(): void
+    {
+        $staff = User::factory()->create()->assignRole('staff');
+        $otherStaff = User::factory()->create()->assignRole('staff');
+        $this->withToken($staff->createToken('order-listing')->plainTextToken);
+
+        $assignedOrders = Order::factory()->state([
+            'assignee_id' => $staff->id,
+            'order_date' => '2026-11-22',
+        ]);
+        $firstMatch = $assignedOrders->create();
+        $differentName = $assignedOrders->create();
+        $otherAssignee = $assignedOrders->create(['assignee_id' => $otherStaff->id]);
+        $differentSku = $assignedOrders->create();
+        $secondMatch = $assignedOrders->create();
+
+        $product = Product::factory()->create();
+        foreach ([
+            [$firstMatch, 'HIST-PAGE-501', 'Historic Cartridge 551B'],
+            [$differentName, 'HIST-PAGE-501', 'Spare Gasket'],
+            [$otherAssignee, 'HIST-PAGE-501', 'Historic Cartridge 551B'],
+            [$differentSku, 'HIST-PAGE-501-OLD', 'Historic Cartridge 551B'],
+            [$secondMatch, 'HIST-PAGE-501', 'Historic Cartridge 551B'],
+        ] as [$order, $sku, $name]) {
+            OrderItem::factory()->create([
+                'order_id' => $order->id,
+                'product_id' => $product->id,
+                'product_sku' => $sku,
+                'product_name' => $name,
+            ]);
+        }
+
+        $this->listing([
+            'search' => 'Cartridge 551B',
+            'sku' => 'HIST-PAGE-501',
+            'per_page' => 1,
+            'page' => 2,
+        ])->assertOk()
+            ->assertJsonCount(1, 'data.orders')
+            ->assertJsonPath('data.orders.0.id', $firstMatch->id)
+            ->assertJsonPath('meta', [
+                'current_page' => 2,
+                'per_page' => 1,
+                'total' => 2,
+                'last_page' => 2,
+            ]);
+    }
+
     public function test_search_and_assignee_filter_preserve_staff_scope(): void
     {
         $staff = User::factory()->create()->assignRole('staff');

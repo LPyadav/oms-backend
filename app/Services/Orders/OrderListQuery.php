@@ -77,8 +77,8 @@ final class OrderListQuery
         }
 
         $sort = $criteria['sort'];
-        if ($sort === OrderSortField::Customer) {
-            return $this->paginateByCustomer($query, $criteria);
+        if ($sort === OrderSortField::Customer || ($sort === OrderSortField::OrderDate && $criteria['page'] > 1)) {
+            return $this->paginateByPageKeys($query, $criteria);
         }
 
         $direction = $criteria['direction'];
@@ -94,7 +94,7 @@ final class OrderListQuery
      * @param  OrderListCriteria  $criteria
      * @return LengthAwarePaginator<int, Order>
      */
-    private function paginateByCustomer(Builder $query, array $criteria): LengthAwarePaginator
+    private function paginateByPageKeys(Builder $query, array $criteria): LengthAwarePaginator
     {
         $page = $criteria['page'];
         $perPage = $criteria['per_page'];
@@ -103,11 +103,16 @@ final class OrderListQuery
         $orders = $query->getModel()->newCollection();
 
         if ($total > 0) {
-            // Sort the filtered IDs and names before fetching the full order rows.
+            $sortColumn = 'orders.order_date';
+            if ($criteria['sort'] === OrderSortField::Customer) {
+                $query->join('customers as sort_customer', 'sort_customer.id', '=', 'orders.customer_id');
+                $sortColumn = 'sort_customer.name';
+            }
+
+            // Apply the offset to the filtered sort keys before loading full order rows.
             $pageKeys = $query
-                ->join('customers as sort_customer', 'sort_customer.id', '=', 'orders.customer_id')
-                ->select(['orders.id', 'sort_customer.name as customer_name'])
-                ->orderBy('sort_customer.name', $direction)
+                ->select(['orders.id', $sortColumn.' as sort_value'])
+                ->orderBy($sortColumn, $direction)
                 ->orderBy('orders.id', $direction)
                 ->forPage($page, $perPage);
 
@@ -115,7 +120,7 @@ final class OrderListQuery
                 ->joinSub($pageKeys->toBase(), 'sorted_page', 'sorted_page.id', '=', 'orders.id')
                 ->select('orders.*')
                 ->with(['customer', 'assignee:id,name'])
-                ->orderBy('sorted_page.customer_name', $direction)
+                ->orderBy('sorted_page.sort_value', $direction)
                 ->orderBy('orders.id', $direction)
                 ->get();
         }
