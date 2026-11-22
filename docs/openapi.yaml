@@ -833,7 +833,22 @@ paths:
         - name: search
           in: query
           schema: { type: string, maxLength: 255 }
-          description: Match a literal substring of the order number, customer name or email, product snapshot name or SKU, or assigned employee name.
+          description: >-
+            Match a literal substring of the order number, customer name or email, product snapshot name or SKU, or assigned employee name.
+            Every term uses substring matching. Use the separate order_number or sku parameters to opt into exact filters.
+        - name: order_number
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 40 }
+          description: >-
+            Exact order number under the stored column collation. Surrounding whitespace is trimmed.
+            A supplied value must be a non-blank scalar string. It combines with search and other filters using AND within the caller’s order scope.
+        - name: sku
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 64 }
+          description: >-
+            Exact saved order-item SKU under the stored column collation. Surrounding whitespace is trimmed.
+            A supplied value must be a non-blank scalar string. An order counts once even when multiple items match.
+            It combines with search and other filters using AND within the caller’s order scope.
         - name: status
           in: query
           schema: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] }

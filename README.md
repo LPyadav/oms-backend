@@ -176,6 +176,24 @@ as stored on the order, and assigned employee name. Combine it with status,
 priority, customer_id, assignee_id, date_from, and date_to. Date bounds
 are inclusive and can be supplied independently.
 
+For exact lookup, explicitly send `order_number` or `sku`. The `search`
+parameter keeps its literal substring behavior for every term. Exact
+filters trim surrounding whitespace and use equality under the stored
+column collation. The limits are 40 characters for `order_number` and 64 for
+`sku`. Blank, array and over-length values return `422 VALIDATION_FAILED`.
+
+The `sku` filter matches item SKU snapshots. An order with multiple
+matching items contributes one result to the page and one to the total.
+When combined with `search` or other filters, every criterion must match
+within the caller’s order visibility scope. Sorting and pagination apply
+to that filtered set.
+
+```http
+GET /api/orders?order_number=ORD-01KABCDEF23456789GHJKMNPQR
+GET /api/orders?sku=ABC-42&status=confirmed
+GET /api/orders?sku=ABC-42&search=fastener
+```
+
 Pass sort as order_date, total, status, priority, or customer and direction
 as asc or desc. Default sort is order_date desc, with order ID as a tie-breaker.
 page and per_page control server-side pagination. The default page size is 25

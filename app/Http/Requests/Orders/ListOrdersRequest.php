@@ -31,9 +31,11 @@ final class ListOrdersRequest extends FormRequest
     public function validationData(): array
     {
         $query = $this->query->all();
-        if (is_string($query['search'] ?? null)) {
-            $search = trim($query['search']);
-            $query['search'] = $search === '' ? null : $search;
+        foreach (['search', 'order_number', 'sku'] as $key) {
+            if (is_string($query[$key] ?? null)) {
+                $term = trim($query[$key]);
+                $query[$key] = $term === '' ? null : $term;
+            }
         }
 
         return array_replace([
@@ -58,6 +60,8 @@ final class ListOrdersRequest extends FormRequest
 
         return [
             'search' => ['bail', 'nullable', 'string', 'max:255'],
+            'order_number' => ['bail', 'sometimes', 'required', 'string', 'max:40'],
+            'sku' => ['bail', 'sometimes', 'required', 'string', 'max:64'],
             'status' => ['bail', 'sometimes', 'required', 'string', Rule::enum(OrderStatus::class)],
             'priority' => ['bail', 'sometimes', 'required', 'string', Rule::enum(OrderPriority::class)],
             'customer_id' => ['bail', 'sometimes', 'required', 'integer', 'min:1'],
@@ -86,6 +90,8 @@ final class ListOrdersRequest extends FormRequest
 
         return [
             'search' => $this->validated('search'),
+            'order_number' => $this->validated('order_number'),
+            'sku' => $this->validated('sku'),
             'status' => $status === null ? null : OrderStatus::from($status),
             'priority' => $priority === null ? null : OrderPriority::from($priority),
             'customer_id' => $customerId === null ? null : (int) $customerId,

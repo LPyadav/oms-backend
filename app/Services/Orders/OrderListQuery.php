@@ -9,6 +9,7 @@ use App\Enums\OrderSortField;
 use App\Enums\OrderStatus;
 use App\Models\Customer;
 use App\Models\Order;
+use App\Models\OrderItem;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -16,6 +17,8 @@ use Illuminate\Pagination\LengthAwarePaginator;
 /**
  * @phpstan-type OrderListCriteria array{
  *     search: ?string,
+ *     order_number: ?string,
+ *     sku: ?string,
  *     status: ?OrderStatus,
  *     priority: ?OrderPriority,
  *     customer_id: ?int,
@@ -42,6 +45,7 @@ final class OrderListQuery
         }
 
         $filters = [
+            'orders.order_number' => $criteria['order_number'],
             'orders.status' => $criteria['status']?->value,
             'orders.priority' => $criteria['priority']?->value,
             'orders.customer_id' => $criteria['customer_id'],
@@ -52,6 +56,14 @@ final class OrderListQuery
             if ($value !== null) {
                 $query->where($column, $value);
             }
+        }
+
+        if ($criteria['sku'] !== null) {
+            $matchingOrderIds = OrderItem::query()
+                ->select('order_items.order_id')
+                ->where('order_items.product_sku', $criteria['sku']);
+
+            $query->whereIn('orders.id', $matchingOrderIds);
         }
 
         if ($criteria['date_from'] !== null) {
