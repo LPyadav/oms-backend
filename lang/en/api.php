@@ -15,6 +15,7 @@ return [
         'list_retrieved' => 'Users retrieved successfully.',
         'created' => 'User created successfully.',
         'updated' => 'User updated successfully.',
+        'enabled' => 'User enabled successfully.',
         'last_active_admin' => 'At least one active Admin must remain.',
         'permissions_retrieved' => 'User permissions retrieved successfully.',
         'permissions_updated' => 'Direct user permissions updated successfully.',
@@ -45,6 +46,7 @@ return [
         'created' => 'Role created successfully.',
         'updated' => 'Role updated successfully.',
         'permissions_updated' => 'Role permissions updated successfully.',
+        'admin_only_permissions' => 'These permissions are reserved for the built-in Admin role: :permissions.',
     ],
 
     'permissions' => [

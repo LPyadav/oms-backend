@@ -51,7 +51,7 @@ final class CreateDemoUsersCommand extends Command
                     $role = $roles->get($roleName);
 
                     if (! $role instanceof Role || $role->guard_name !== $guardName) {
-                        throw new DomainException("Seed the {$roleName} role before creating demo users.");
+                        throw new DomainException("Run php artisan migrate to provision the {$roleName} role before creating demo users.");
                     }
 
                     $email = $account['email'];

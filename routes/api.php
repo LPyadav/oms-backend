@@ -83,6 +83,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
             ->whereNumber('user')
             ->name('disable');
 
+        Route::patch('/{user}/enable', [AdminUserController::class, 'enable'])
+            ->whereNumber('user')
+            ->name('enable');
+
         Route::patch('/{user}/roles', [AdminUserController::class, 'assignRoles'])
             ->whereNumber('user')
             ->name('roles.update');

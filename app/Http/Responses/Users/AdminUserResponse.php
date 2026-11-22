@@ -40,13 +40,7 @@ final readonly class AdminUserResponse
 
     public function create(User $user, Request $request): JsonResponse
     {
-        return $this->apiResponse->success(
-            message: Lang::string('api.users.created'),
-            data: [
-                'user' => (new AdminUserResource($user))->resolve($request),
-            ],
-            status: Response::HTTP_CREATED,
-        );
+        return $this->user($user, $request, Lang::string('api.users.created'), Response::HTTP_CREATED);
     }
 
     /**
@@ -62,11 +56,26 @@ final readonly class AdminUserResponse
 
     public function update(User $user, Request $request): JsonResponse
     {
+        return $this->user($user, $request, Lang::string('api.users.updated'));
+    }
+
+    public function enable(User $user, Request $request): JsonResponse
+    {
+        return $this->user($user, $request, Lang::string('api.users.enabled'));
+    }
+
+    private function user(
+        User $user,
+        Request $request,
+        string $message,
+        int $status = Response::HTTP_OK,
+    ): JsonResponse {
         return $this->apiResponse->success(
-            message: Lang::string('api.users.updated'),
+            message: $message,
             data: [
                 'user' => (new AdminUserResource($user))->resolve($request),
             ],
+            status: $status,
         );
     }
 }

@@ -68,9 +68,9 @@ final class AdminRoleController extends Controller
 
     public function permissions(Request $request): JsonResponse
     {
-        $permissions = $this->roleManagementService->permissions($this->actor($request));
+        $catalog = $this->roleManagementService->permissions($this->actor($request));
 
-        return $this->adminRoleResponse->permissions($permissions);
+        return $this->adminRoleResponse->permissions($catalog);
     }
 
     private function actor(Request $request): User
