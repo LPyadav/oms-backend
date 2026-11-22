@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\User;
-use Spatie\Permission\Guard;
 
-final class UserPolicy
+final readonly class UserPolicy
 {
+    public function __construct(private AdminAuthorization $authorization) {}
+
     public function viewAny(User $actor): bool
     {
         return $this->canManageUsers($actor);
@@ -36,8 +37,7 @@ final class UserPolicy
 
     public function assignRoles(User $actor, ?User $target = null): bool
     {
-        return $this->canManageUsers($actor)
-            && $actor->checkPermissionTo('roles.manage');
+        return $this->authorization->allows($actor, 'users.manage', 'roles.manage');
     }
 
     public function assignPermissions(User $actor): bool
@@ -47,8 +47,6 @@ final class UserPolicy
 
     private function canManageUsers(User $actor): bool
     {
-        return $actor->is_active
-            && $actor->hasRole('admin', Guard::getDefaultName($actor))
-            && $actor->checkPermissionTo('users.manage');
+        return $this->authorization->allows($actor, 'users.manage');
     }
 }

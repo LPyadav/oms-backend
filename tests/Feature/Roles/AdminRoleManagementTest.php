@@ -7,6 +7,8 @@ namespace Tests\Feature\Roles;
 use App\Constants\ApiErrorCode;
 use App\Models\AccessAuditLog;
 use App\Models\User;
+use App\Policies\RolePolicy;
+use App\Policies\UserPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -322,6 +324,86 @@ final class AdminRoleManagementTest extends TestCase
         $reloadedAssignee = User::query()->findOrFail($assignee->id);
         self::assertFalse($reloadedAssignee->can($permission));
         self::assertFalse($reloadedAssignee->checkPermissionTo($permission));
+    }
+
+    public function test_role_assignment_checks_mixed_grants_in_one_query(): void
+    {
+        $adminRole = Role::findByName('admin', 'web');
+        $adminRole->revokePermissionTo('roles.manage');
+        $actor = User::factory()->create()->assignRole($adminRole)->givePermissionTo('roles.manage');
+        $actor = User::query()->findOrFail($actor->id);
+        $policy = app(UserPolicy::class);
+        $connection = $actor->getConnection();
+
+        $connection->flushQueryLog();
+        $connection->enableQueryLog();
+
+        try {
+            self::assertTrue($policy->assignRoles($actor));
+            self::assertCount(1, $connection->getQueryLog());
+        } finally {
+            $connection->disableQueryLog();
+            $connection->flushQueryLog();
+        }
+
+        $actor->load('roles', 'permissions');
+        $editor = User::query()->findOrFail($actor->id);
+        $editor->revokePermissionTo('roles.manage');
+
+        self::assertTrue($policy->viewAny($actor));
+        self::assertFalse($policy->assignRoles($actor));
+
+        $editor->givePermissionTo('roles.manage');
+        self::assertTrue($policy->assignRoles($actor));
+
+        $editor->givePermissionTo('users.manage');
+        $editor->removeRole($adminRole);
+
+        self::assertFalse($policy->assignRoles($actor));
+        self::assertFalse(app(RolePolicy::class)->viewAny($actor));
+    }
+
+    public function test_admin_policies_read_current_grants_after_a_stale_cache_fill(): void
+    {
+        $adminRole = Role::findByName('admin', 'web');
+        $adminRole->revokePermissionTo('roles.manage');
+        $secondRole = Role::findByName('manager', 'web');
+        $secondRole->givePermissionTo('roles.manage');
+        $actor = User::factory()->create()->assignRole($adminRole, $secondRole);
+        $userPolicy = app(UserPolicy::class);
+        $rolePolicy = app(RolePolicy::class);
+
+        self::assertTrue($actor->checkPermissionTo('roles.manage'));
+        self::assertTrue($userPolicy->assignRoles($actor));
+        self::assertTrue($rolePolicy->viewAny($actor));
+        $cacheKey = Config::string('permission.cache.key');
+        $oldPermissions = Cache::get($cacheKey);
+        self::assertIsArray($oldPermissions);
+
+        $secondRole->revokePermissionTo('roles.manage');
+        Cache::forever($cacheKey, $oldPermissions);
+        app(PermissionRegistrar::class)->clearPermissionsCollection();
+
+        self::assertFalse($userPolicy->assignRoles($actor));
+        self::assertFalse($rolePolicy->viewAny($actor));
+        self::assertTrue($userPolicy->viewAny($actor));
+    }
+
+    public function test_admin_policy_requires_the_current_active_account_and_exact_admin_role(): void
+    {
+        $adminRole = Role::findByName('admin', 'web');
+        $actor = User::factory()->create()->assignRole($adminRole);
+        $policy = app(UserPolicy::class);
+        $actor->load('roles');
+        self::assertTrue($policy->viewAny($actor));
+
+        $editor = User::query()->findOrFail($actor->id);
+        $editor->forceFill(['is_active' => false])->saveOrFail();
+        self::assertFalse($policy->viewAny($actor));
+
+        $editor->forceFill(['is_active' => true])->saveOrFail();
+        $adminRole->forceFill(['name' => 'Admin'])->saveOrFail();
+        self::assertFalse($policy->viewAny($actor));
     }
 
     public function test_permissions_require_a_body_list_and_an_empty_array_clears_them(): void
