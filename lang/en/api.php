@@ -21,6 +21,18 @@ return [
         'permissions_updated' => 'Direct user permissions updated successfully.',
     ],
 
+    'dashboard' => [
+        'overview_retrieved' => 'Dashboard overview retrieved.',
+        'revenue_trend_retrieved' => 'Revenue trend retrieved.',
+        'revenue_range_exceeded' => 'The revenue date range may span at most :days days.',
+    ],
+
+    'reports' => [
+        'order_fulfillment_retrieved' => 'Order fulfillment report retrieved.',
+        'sales_tax_retrieved' => 'Sales and tax report retrieved.',
+        'date_range_exceeded' => 'The report date range may span at most :days days.',
+    ],
+
     'orders' => [
         'assigned' => 'Order assignment updated successfully.',
         'assignees_retrieved' => 'Assignable employees retrieved successfully.',

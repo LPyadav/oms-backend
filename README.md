@@ -367,6 +367,131 @@ queue list accordingly. The recovery delay and batch size default to 60 seconds
 and 100 events. Job delivery defaults to 3 attempts with a 10-second backoff.
 All four settings are listed in `.env.example`.
 
+### Dashboard
+
+| Method | Endpoint | Operation |
+| --- | --- | --- |
+| GET | /api/dashboard | Retrieve all-time order metrics and recent orders |
+| GET | /api/dashboard/revenue-trend | Retrieve completed-order revenue by day, week, or month |
+
+Send a Sanctum Bearer token with `dashboard.view` and `orders.view.any`.
+These are default Admin and Manager grants. The customer and product totals
+also require `customers.view` and `products.view`, respectively. A hidden
+count is `null` and an authorized empty count is zero. Catalog counts include
+active and inactive records. Recent orders contain order summary fields and
+sort by order date descending, then ID descending.
+
+The overview counts every non-deleted order and includes all seven order
+statuses. Revenue and average order value use stored totals including tax for
+non-deleted Completed orders with a completion timestamp. Financial metrics
+are calculated separately for each stored currency. The overview returns
+`total_revenue_minor` as an exact decimal string in minor units, with `"0"` for
+zero revenue. Average order value rounds half up from the exact total to
+the nearest minor unit and is returned as an integer. Recent order amounts
+are also integers in minor units.
+
+The revenue trend accepts `group_by=day|week|month` and an optional pair
+of inclusive `date_from` and `date_to` dates in `YYYY-MM-DD` format. By
+default it returns daily points for the last 30 calendar days including
+today. Each order contributes to the period containing the local date of
+its `completed_at` in `DASHBOARD_TIMEZONE`, which defaults to UTC.
+Weeks start on Monday. Response dates and bucket labels preserve the
+requested calendar range, including any date skipped in the reporting
+timezone. A daily bucket for a skipped date has zero orders and revenue.
+Every bucket returns `revenue_minor` as an exact decimal string in minor
+units. Empty buckets return `"0"` and zero completed orders. An empty result
+uses the configured Orders currency.
+
+Set `DASHBOARD_RECENT_ORDERS_LIMIT` to change the overview recent-order
+count. Set `DASHBOARD_REVENUE_DEFAULT_DAYS` and
+`DASHBOARD_REVENUE_MAX_DAYS` to configure the date window. The maximum
+is capped at 366 days.
+
+### Order and fulfillment report
+
+Send `GET /api/reports/orders` with a Sanctum Bearer token that has
+`reports.view` and `orders.view.any`. Admins and Managers have both
+grants by default. Each row includes the order number, business order date,
+priority, status, customer and assignee ID and name, currency, and stored
+total. Use the row's ID with `GET /api/orders/{order}` for details.
+
+Pass `date_from` and `date_to` together in `YYYY-MM-DD` format. Both
+endpoints of that range are inclusive for `order_date`. An omitted pair
+defaults to the last 30 calendar days, including today in
+`DASHBOARD_TIMEZONE`. Skipped local dates still count toward the span.
+Optional filters are `status`, `customer_id`, and `assignee_id`. Rows sort
+by order date descending, then by ID descending.
+Use `page` and `per_page` for pagination. The default page size is 25.
+
+Totals cover every order matching the filters, including cancelled orders
+when they match. Amounts are grouped by stored currency. Each aggregate
+`grand_total_minor` is a decimal integer string so clients can preserve
+precision for large totals. MySQL uses a repeatable-read transaction so
+each page and its totals share the same snapshot. The response includes
+`meta.snapshot_at` in UTC. Each page request starts its own snapshot.
+
+Set `REPORTS_DEFAULT_DAYS` and `REPORTS_MAX_DAYS` to configure the date
+window, up to 366 days. Set `PAGINATION_REPORTS_DEFAULT_PER_PAGE` and
+`PAGINATION_REPORTS_MAX_PER_PAGE` to configure page sizes up to 100.
+
+### Sales and tax report
+
+Send `GET /api/reports/sales-tax` with the same report permissions and
+pagination options. `date_from` and `date_to` are inclusive calendar dates
+in `DASHBOARD_TIMEZONE`. An omitted pair uses the same calendar window as
+the Order and Fulfillment report. The report includes non-deleted
+Completed orders whose `completed_at` falls on one of those local dates.
+A range containing only skipped dates returns no orders and preserves the
+date filters in the response. Rows sort by completion time descending,
+then ID descending. The response includes the reporting timezone and a
+UTC `snapshot_at`.
+
+Optional `customer_id` and `product_id` filters match saved order records.
+A product match includes the whole order and all of its stored amounts
+once. Use the row's order ID with `GET /api/orders/{order}` for details.
+
+Each row shows the stored subtotal, item discount, order discount, net total,
+tax, and final amount including tax. These amounts retain the pricing and tax
+applied at order completion, including order-level tax overrides. Report totals
+use the same filtered snapshot as the rows and are grouped by saved currency.
+Aggregate minor-unit amounts are decimal integer strings.
+
+### Report history beyond 366 days
+
+Split the requested history into consecutive, non-overlapping windows of
+at most `REPORTS_MAX_DAYS` days. The default limit is 366. Both
+`date_from` and `date_to` are inclusive. Start each new window on the
+calendar day after the previous `date_to`. Keep the report endpoint and
+optional filters fixed across windows. Fulfillment uses `order_date`.
+Sales & Tax uses completion dates in `DASHBOARD_TIMEZONE`.
+
+With the default limit, retrieve `2024-01-01` through `2025-06-30` in
+these windows.
+
+| `date_from` | `date_to` | Inclusive days |
+| --- | --- | ---: |
+| `2024-01-01` | `2024-12-31` | 366 |
+| `2025-01-01` | `2025-06-30` | 181 |
+
+Start at `page=1` for each window, keep `per_page` fixed, and retrieve
+pages through `meta.last_page`.
+
+For a newest-first export, concatenate Order & Fulfillment windows from
+newest to oldest and keep the row order within each window. For Sales &
+Tax, combine rows from all windows and sort globally by
+`completed_at DESC`, then `id DESC`. Completion timestamps from adjacent
+local-date windows can interleave when clocks roll back across midnight.
+
+Use `data.totals` once per window. Each page includes totals for the
+entire filtered window. Sum `order_count` across windows and combine
+`data.totals.by_currency` entries by currency. Add each minor-unit
+amount with exact integer arithmetic such as JavaScript `BigInt` and
+serialize the combined money totals as decimal strings.
+
+Each page request has its own snapshot and UTC `meta.snapshot_at`.
+Use a stable dataset throughout retrieval when the combined export
+needs to represent one consistent view.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |
