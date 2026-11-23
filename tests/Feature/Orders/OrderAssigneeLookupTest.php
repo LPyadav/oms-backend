@@ -31,8 +31,8 @@ final class OrderAssigneeLookupTest extends TestCase
     public function test_manager_can_search_active_accounts_without_access_to_admin_users(): void
     {
         $manager = User::factory()->create(['name' => 'Operations Lead'])->assignRole('manager');
-        $staff = User::factory()->create(['name' => 'Dispatch Avery'])->assignRole('staff');
         $customRole = Role::create(['name' => 'dispatch-coordinator', 'guard_name' => 'web']);
+        $staff = User::factory()->create(['name' => 'Dispatch Avery'])->assignRole('staff', $customRole);
         $coordinator = User::factory()->create(['name' => 'Dispatch Cameron'])->assignRole($customRole);
         $unassigned = User::factory()->create(['name' => 'Dispatch Drew']);
         User::factory()->create(['name' => 'Dispatch Inactive', 'is_active' => false])->assignRole('staff');
@@ -45,9 +45,9 @@ final class OrderAssigneeLookupTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('errors', null)
             ->assertJsonPath('data.assignees', [
-                ['id' => $staff->id, 'name' => $staff->name],
-                ['id' => $coordinator->id, 'name' => $coordinator->name],
-                ['id' => $unassigned->id, 'name' => $unassigned->name],
+                $this->assigneeData($staff, ['dispatch-coordinator', 'staff']),
+                $this->assigneeData($coordinator, ['dispatch-coordinator']),
+                $this->assigneeData($unassigned),
             ])
             ->assertJsonPath('meta.total', 3)
             ->assertJsonPath('meta.per_page', Config::integer('pagination.order_assignees.default_per_page'));
@@ -65,7 +65,7 @@ final class OrderAssigneeLookupTest extends TestCase
 
         $this->getJson(self::ENDPOINT.'?search='.rawurlencode('rate%_!'))
             ->assertOk()
-            ->assertJsonPath('data.assignees', [['id' => $match->id, 'name' => $match->name]]);
+            ->assertJsonPath('data.assignees', [$this->assigneeData($match)]);
     }
 
     public function test_lookup_pages_by_name_then_id_and_treats_blank_search_as_unfiltered(): void
@@ -87,7 +87,7 @@ final class OrderAssigneeLookupTest extends TestCase
 
             $this->getJson(self::ENDPOINT.'?search=%20%20&page='.$page)
                 ->assertOk()
-                ->assertJsonPath('data.assignees', [['id' => $assignee->id, 'name' => $assignee->name]])
+                ->assertJsonPath('data.assignees', [$this->assigneeData($assignee)])
                 ->assertJsonPath('meta', [
                     'current_page' => $page,
                     'per_page' => 1,
@@ -126,7 +126,7 @@ final class OrderAssigneeLookupTest extends TestCase
             'per_page' => 0,
         ])
             ->assertOk()
-            ->assertJsonPath('data.assignees', [['id' => $match->id, 'name' => $match->name]])
+            ->assertJsonPath('data.assignees', [$this->assigneeData($match)])
             ->assertJsonPath('meta.current_page', 1)
             ->assertJsonPath('meta.per_page', 1);
     }
@@ -178,6 +178,20 @@ final class OrderAssigneeLookupTest extends TestCase
         $this->getJson(self::ENDPOINT)
             ->assertUnauthorized()
             ->assertJsonPath('errors.code', ApiErrorCode::AUTH_UNAUTHENTICATED);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array{id: int, name: string, email: string, roles: list<string>}
+     */
+    private function assigneeData(User $user, array $roles = []): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'roles' => $roles,
+        ];
     }
 
     private function authenticate(User $actor): void

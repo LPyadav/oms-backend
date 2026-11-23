@@ -159,9 +159,20 @@ final readonly class OrderResponse
         int $status = Response::HTTP_OK,
         array $headers = [],
     ): JsonResponse {
+        $data = (new OrderResource($order, $this->customerContactScope($request)))->resolve($request);
+        $actor = $request->user();
+
+        if ($order->assignee_id !== null && $actor instanceof User && $actor->can('assign', Order::class)) {
+            $order->load(['assignee:id,name,email', 'assignee.roles:id,name,guard_name']);
+
+            if ($order->assignee instanceof User) {
+                $data['assignee'] = (new OrderAssigneeResource($order->assignee))->resolve($request);
+            }
+        }
+
         return $this->apiResponse->success(
             message: $message,
-            data: ['order' => (new OrderResource($order, $this->customerContactScope($request)))->resolve($request)],
+            data: ['order' => $data],
             status: $status,
             headers: $headers,
         );

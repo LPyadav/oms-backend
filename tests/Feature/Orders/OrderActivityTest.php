@@ -56,7 +56,8 @@ final class OrderActivityTest extends TestCase
         $order = Order::query()->sole();
         $path = '/api/orders/'.$order->id;
         $this->useBearer($previousToken);
-        $this->getJson($path)->assertOk();
+        $this->getJson($path)->assertOk()
+            ->assertJsonPath('data.order.assignee', ['id' => $previous->id, 'name' => $previous->name]);
         $this->useBearer($nextToken);
         $this->getJson($path)->assertNotFound();
 
@@ -66,6 +67,12 @@ final class OrderActivityTest extends TestCase
             'expected_version' => 1,
         ])->assertOk()
             ->assertJsonPath('data.order.assignee_id', $next->id)
+            ->assertJsonPath('data.order.assignee', [
+                'id' => $next->id,
+                'name' => $next->name,
+                'email' => $next->email,
+                'roles' => ['staff'],
+            ])
             ->assertJsonPath('data.order.status', OrderStatus::Draft->value)
             ->assertJsonPath('data.order.version', 2)
             ->assertJsonCount(2, 'data.order.assignment_history')
@@ -90,6 +97,7 @@ final class OrderActivityTest extends TestCase
 
         $this->getJson('/api/orders')->assertOk()
             ->assertJsonPath('data.orders.0.id', $order->id)
+            ->assertJsonPath('data.orders.0.assignee', ['id' => $next->id, 'name' => $next->name])
             ->assertJsonMissingPath('data.orders.0.assignment_history');
         $this->useBearer($previousToken);
         $this->getJson($path)->assertNotFound();
@@ -102,6 +110,37 @@ final class OrderActivityTest extends TestCase
         $this->assertDatabaseCount('order_notes', 0);
         $this->assertDatabaseCount('order_status_histories', 0);
         $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_order_assignee_metadata_is_limited_to_assignment_permission(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $reviewer = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.status.update.any');
+        $assignee = User::factory()->create(['is_active' => false])->assignRole('staff');
+        $order = Order::factory()->create([
+            'created_by' => $manager->id,
+            'assignee_id' => $assignee->id,
+            'status' => OrderStatus::Confirmed,
+        ]);
+        $path = '/api/orders/'.$order->id;
+        $identity = ['id' => $assignee->id, 'name' => $assignee->name];
+
+        $this->useBearer($manager->createToken('order activity test')->plainTextToken);
+        $this->getJson($path)->assertOk()
+            ->assertJsonPath('data.order.assignee', [
+                ...$identity,
+                'email' => $assignee->email,
+                'roles' => ['staff'],
+            ]);
+
+        $this->useBearer($reviewer->createToken('order activity test')->plainTextToken);
+        $this->getJson($path)->assertOk()
+            ->assertJsonPath('data.order.assignee', $identity);
+        $this->postJson($path.'/status', [
+            'status' => OrderStatus::Processing->value,
+            'expected_version' => 1,
+        ])->assertOk()
+            ->assertJsonPath('data.order.assignee', $identity);
     }
 
     public function test_assignment_checks_version_and_keeps_an_unchanged_assignee_as_a_no_op(): void
@@ -131,6 +170,7 @@ final class OrderActivityTest extends TestCase
         $this->postJson($path, ['assignee_id' => null, 'expected_version' => 2])
             ->assertOk()
             ->assertJsonPath('data.order.assignee_id', null)
+            ->assertJsonPath('data.order.assignee', null)
             ->assertJsonPath('data.order.version', 3)
             ->assertJsonPath('data.order.assignment_history.1.previous_assignee_id', $employee->id)
             ->assertJsonPath('data.order.assignment_history.1.new_assignee_id', null);

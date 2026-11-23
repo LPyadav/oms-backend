@@ -311,8 +311,9 @@ review the change before retrying.
 
 Use `GET /api/orders/assignees` to populate the assignee selector. The
 caller must be active and have `orders.view.any` and `orders.assign`.
-The lookup lists active users by name ignoring case, then by ID. Each entry in
-`data.assignees` contains only `id` and `name`.
+The lookup lists active users by name ignoring case, then by ID. Each entry
+includes `id`, `name`, `email`, and the sorted names of assigned roles.
+Users without roles have an empty role list.
 
 Pass an optional `search` query parameter to match a literal substring
 of the name, ignoring case. Leading and trailing whitespace is trimmed,
@@ -328,6 +329,11 @@ new assignees within the write transaction.
 Assignment takes assignee_id and expected_version. Supply null to unassign.
 Changes require an active assignee and an eligible order. Assignment history
 shows the old and new assignee IDs, acting user, and time.
+
+Order detail and full order write responses include the current assignee email
+and roles for callers with both `orders.view.any` and `orders.assign`.
+Other viewers and order lists receive the assignee ID and name. An unassigned
+order has `assignee: null`.
 
 To append a note, send body as JSON. The server records the authenticated
 author. Staff with assigned-note permission can add notes to their own
@@ -559,6 +565,11 @@ and the shared response schemas.
 | GET | /api/admin/audit-logs | Active Admin with audit.view. Paged order/customer/product events, with action, actor, target and UTC date filters. |
 | GET | /api/admin/audit-logs/{log} | Reads the event's permitted before and after values, including retained history for deleted orders. |
 | PATCH | /api/me/password | Checks the old password and revokes every bearer token after a successful change. |
+
+Both audit list and detail responses include `actor_email` from the actor's
+current account, or `null` if the account is unavailable. `actor_id` remains
+the identifier used by audit filters. The actor field is separate from
+the permitted before and after values.
 
 Both audit lists have a default page size of 25 and a default maximum of 100.
 Configure the access audit list with `PAGINATION_ACCESS_AUDIT_LOGS_DEFAULT_PER_PAGE`

@@ -12,13 +12,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class AccessAuditLogResource extends JsonResource
 {
     /**
-     * @return array{id: int, actor_id: int, target_type: string, target_id: int, action: string, created_at: string, before_values: object|null, after_values: object}
+     * @return array{id: int, actor_id: int, actor_email: string|null, target_type: string, target_id: int, action: string, created_at: string, before_values: object|null, after_values: object}
      */
     public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
             'actor_id' => $this->actor_id,
+            'actor_email' => $this->actor?->email,
             'target_type' => $this->target_type,
             'target_id' => $this->target_id,
             'action' => $this->action,

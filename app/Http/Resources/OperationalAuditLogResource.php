@@ -40,6 +40,7 @@ final class OperationalAuditLogResource extends JsonResource
             'id' => $this->id,
             'actor_id' => $this->actor_id,
             'actor_name' => $this->actor?->name,
+            'actor_email' => $this->actor?->email,
             'target_type' => $this->target_type,
             'target_id' => $this->target_id,
             'action' => $this->action,

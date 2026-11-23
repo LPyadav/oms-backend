@@ -1046,7 +1046,8 @@ paths:
       summary: List assignable employees
       description: >-
         Requires an active user with orders.view.any and orders.assign.
-        Returns only the ID and name of active users, ordered by case-insensitive name and then ID.
+        Returns the ID, name, email, and role names of active users.
+        Results are ordered by case-insensitive name and then ID.
         Order creation and assignment revalidate the new assignee during the write transaction.
       parameters:
         - name: search
@@ -2699,6 +2700,19 @@ components:
         id: { type: integer, format: int64, minimum: 1 }
         name: { type: string }
 
+    OrderAssigneeProfile:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, roles]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        email: { type: string, format: email }
+        roles:
+          type: array
+          description: Assigned role names in ascending order.
+          items: { type: string }
+
     OrderNote:
       type: object
       additionalProperties: false
@@ -2874,7 +2888,12 @@ components:
           description: >-
             Email, phone, and address are null unless the caller has customers.view, or has
             customers.view.assigned-orders and is the current assignee.
-        assignee: { oneOf: [{ $ref: '#/components/schemas/OrderActor' }, { type: 'null' }] }
+        assignee:
+          description: Email and roles are available to callers with orders.view.any and orders.assign.
+          oneOf:
+            - $ref: '#/components/schemas/OrderAssigneeProfile'
+            - $ref: '#/components/schemas/OrderActor'
+            - type: 'null'
         items: { type: array, items: { $ref: '#/components/schemas/OrderItemSnapshot' } }
         notes: { type: array, items: { $ref: '#/components/schemas/OrderNote' } }
         status_history: { type: array, items: { $ref: '#/components/schemas/OrderStatusHistoryEntry' } }
@@ -2908,7 +2927,7 @@ components:
               additionalProperties: false
               required: [assignees]
               properties:
-                assignees: { type: array, items: { $ref: '#/components/schemas/OrderActor' } }
+                assignees: { type: array, items: { $ref: '#/components/schemas/OrderAssigneeProfile' } }
             meta: { $ref: '#/components/schemas/PaginationMeta' }
 
     OrderDetailResponse:
@@ -3344,11 +3363,15 @@ components:
 
     AuditLog:
       type: object
-      required: [id, actor_id, target_type, target_id, action, created_at]
+      required: [id, actor_id, actor_email, target_type, target_id, action, created_at]
       properties:
         id: { type: integer, minimum: 1 }
         actor_id: { type: integer, minimum: 1 }
         actor_name: { type: [string, 'null'] }
+        actor_email:
+          type: [string, 'null']
+          format: email
+          description: Current actor email, or null when the actor account is unavailable.
         target_type: { type: string, enum: [user, role, order, customer, product] }
         target_id: { type: integer, minimum: 1 }
         action: { type: string }
