@@ -326,7 +326,7 @@ final readonly class OrderService
     /**
      * @return Builder<Order>
      */
-    private function visibleOrders(User $actor): Builder
+    public function visibleOrders(User $actor): Builder
     {
         if (! $this->policy->viewAny($actor)) {
             throw new AuthorizationException;

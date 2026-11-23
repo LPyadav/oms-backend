@@ -38,6 +38,11 @@ final readonly class AdminUserResponse
         );
     }
 
+    public function show(User $user, Request $request): JsonResponse
+    {
+        return $this->user($user, $request, Lang::string('api.users.retrieved'));
+    }
+
     public function create(User $user, Request $request): JsonResponse
     {
         return $this->user($user, $request, Lang::string('api.users.created'), Response::HTTP_CREATED);

@@ -52,6 +52,13 @@ final readonly class AuthenticationResponse
         );
     }
 
+    public function passwordChanged(): JsonResponse
+    {
+        return $this->apiResponse->success(
+            message: Lang::string('api.auth.password_changed'),
+        );
+    }
+
     public function logout(): JsonResponse
     {
         return $this->apiResponse->success(

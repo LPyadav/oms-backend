@@ -11,8 +11,10 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Illuminate\Support\Timebox;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Contracts\HasAbilities;
 use Laravel\Sanctum\PersonalAccessToken;
 use LogicException;
@@ -104,6 +106,41 @@ final readonly class AuthenticationService
             'roles' => array_values($roles->all()),
             'permissions' => array_values($permissions->all()),
         ];
+    }
+
+    public function changePassword(
+        User $actor,
+        #[SensitiveParameter] string $currentPassword,
+        #[SensitiveParameter] string $newPassword,
+    ): void {
+        /** @var HasAbilities|null $token */
+        $token = $actor->currentAccessToken();
+
+        if (! $token instanceof PersonalAccessToken) {
+            throw new AuthenticationException;
+        }
+
+        DB::transaction(function () use ($actor, $token, $currentPassword, $newPassword): void {
+            $account = User::query()->lockForUpdate()->find($actor->id);
+
+            if (
+                $account === null
+                || ! $account->is_active
+                || ! $account->tokens()->whereKey($token->getKey())->exists()
+            ) {
+                throw new AuthenticationException;
+            }
+
+            if (! $this->hasher->check($currentPassword, $account->getAuthPassword())) {
+                throw ValidationException::withMessages([
+                    'current_password' => Lang::string('validation.current_password'),
+                ]);
+            }
+
+            $account->password = $this->hasher->make($newPassword);
+            $account->saveOrFail();
+            $account->tokens()->delete();
+        });
     }
 
     public function logout(User $user): void

@@ -120,7 +120,18 @@ final class ProductManagementTest extends TestCase
         $deactivation = AuditLog::query()->where('action', 'product.deactivated')->sole();
         self::assertSame(['is_active' => true], $deactivation->before_values);
         self::assertSame(['is_active' => false], $deactivation->after_values);
-        $this->assertDatabaseCount('audit_logs', 3);
+        $adjustments = AuditLog::query()
+            ->where('action', 'product.stock_adjusted')
+            ->where('actor_id', $admin->id)
+            ->where('target_type', 'product')
+            ->where('target_id', $product->id)
+            ->orderBy('id')
+            ->get();
+        self::assertSame([0, 8], $adjustments->pluck('before_values.stock_quantity')->all());
+        self::assertSame([0, 1], $adjustments->pluck('before_values.stock_version')->all());
+        self::assertSame([8, 3], $adjustments->pluck('after_values.stock_quantity')->all());
+        self::assertSame([1, 2], $adjustments->pluck('after_values.stock_version')->all());
+        $this->assertDatabaseCount('audit_logs', 5);
     }
 
     public function test_list_applies_literal_search_status_and_product_pagination(): void

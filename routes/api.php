@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Audit\AccessAuditLogController;
+use App\Http\Controllers\Audit\OperationalAuditController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Customers\CustomerController;
+use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Notifications\OrderNotificationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Products\ProductController;
+use App\Http\Controllers\Reports\ReportController;
 use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
@@ -29,8 +33,21 @@ Route::middleware('auth:sanctum')->group(static function (): void {
     Route::post('/logout', [AuthController::class, 'logout'])
         ->name('auth.logout');
 
+    Route::patch('/me/password', [AuthController::class, 'changePassword'])
+        ->middleware('throttle:6,1')
+        ->name('auth.password.update');
+
     Route::get('/me', [AuthController::class, 'me'])
         ->name('auth.me');
+
+    Route::get('/dashboard', [DashboardController::class, 'show'])->name('dashboard.show');
+    Route::get('/dashboard/revenue-trend', [DashboardController::class, 'revenueTrend'])
+        ->name('dashboard.revenue-trend');
+
+    Route::get('/reports/orders', [ReportController::class, 'orderFulfillment'])
+        ->name('reports.orders');
+    Route::get('/reports/sales-tax', [ReportController::class, 'salesTax'])
+        ->name('reports.sales-tax');
 
     Route::prefix('customers')->name('customers.')->group(static function (): void {
         Route::get('/', [CustomerController::class, 'index'])->name('index');
@@ -39,6 +56,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::get('/{customer}', [CustomerController::class, 'show'])
             ->whereNumber('customer')
             ->name('show');
+
+        Route::get('/{customer}/order-summary', [CustomerController::class, 'orderSummary'])
+            ->whereNumber('customer')
+            ->name('order-summary');
 
         Route::patch('/{customer}', [CustomerController::class, 'update'])
             ->whereNumber('customer')
@@ -118,6 +139,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::post('/', [AdminUserController::class, 'store'])
             ->name('store');
 
+        Route::get('/{user}', [AdminUserController::class, 'show'])
+            ->whereNumber('user')
+            ->name('show');
+
         Route::patch('/{user}', [AdminUserController::class, 'update'])
             ->whereNumber('user')
             ->name('update');
@@ -157,6 +182,20 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::patch('/{role}/permissions', [AdminRoleController::class, 'assignPermissions'])
             ->whereNumber('role')
             ->name('permissions.update');
+    });
+
+    Route::prefix('admin/access-audit-logs')->name('admin.access-audit-logs.')->group(static function (): void {
+        Route::get('/', [AccessAuditLogController::class, 'index'])->name('index');
+        Route::get('/{accessAuditLog}', [AccessAuditLogController::class, 'show'])
+            ->whereNumber('accessAuditLog')
+            ->name('show');
+    });
+
+    Route::prefix('admin/audit-logs')->name('admin.audit-logs.')->group(static function (): void {
+        Route::get('/', [OperationalAuditController::class, 'index'])->name('index');
+        Route::get('/{auditLog}', [OperationalAuditController::class, 'show'])
+            ->whereNumber('auditLog')
+            ->name('show');
     });
 
     Route::get('/admin/permissions', [AdminRoleController::class, 'permissions'])

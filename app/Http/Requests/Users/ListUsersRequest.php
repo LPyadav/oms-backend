@@ -40,7 +40,27 @@ final class ListUsersRequest extends FormRequest
         return [
             'page' => ['bail', 'required', 'integer', 'min:1', 'max:'.$maxPage],
             'per_page' => ['bail', 'required', 'integer', 'min:1', 'max:'.$maxPerPage],
+            'search' => ['bail', 'nullable', 'string', 'max:255'],
+            'is_active' => ['bail', 'sometimes', 'required', 'boolean'],
+            'role' => ['bail', 'nullable', 'string', 'max:255'],
         ];
+    }
+
+    public function search(): ?string
+    {
+        return $this->validated('search');
+    }
+
+    public function isActive(): ?bool
+    {
+        $value = $this->validated('is_active');
+
+        return $value === null ? null : (bool) $value;
+    }
+
+    public function role(): ?string
+    {
+        return $this->validated('role');
     }
 
     public function page(): int
