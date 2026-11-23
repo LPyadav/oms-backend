@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Roles;
 
+use App\Constants\AdminOnlyPermissions;
 use App\Models\User;
 use App\Policies\RolePolicy;
 use App\Services\Audit\AccessAuditLogWriter;
@@ -29,14 +30,6 @@ final readonly class RoleManagementService
     private const string ADMIN_ROLE_NAME = 'admin';
 
     private const array BUILT_IN_ROLE_NAMES = [self::ADMIN_ROLE_NAME, 'manager', 'staff'];
-
-    private const array ADMIN_ONLY_PERMISSION_NAMES = [
-        'audit.view',
-        'customers.manage',
-        'products.manage',
-        'roles.manage',
-        'users.manage',
-    ];
 
     public function __construct(
         private RolePolicy $rolePolicy,
@@ -136,7 +129,7 @@ final readonly class RoleManagementService
 
         return [
             'permissions' => $permissions,
-            'admin_only_permissions' => array_values(array_intersect($permissions, self::ADMIN_ONLY_PERMISSION_NAMES)),
+            'admin_only_permissions' => array_values(array_intersect($permissions, AdminOnlyPermissions::NAMES)),
         ];
     }
 
@@ -175,7 +168,7 @@ final readonly class RoleManagementService
 
             $currentPermissions = $role->permissions->sortBy('id')->values();
             $adminOnlyAdditions = array_diff(
-                array_intersect($permissionNames, self::ADMIN_ONLY_PERMISSION_NAMES),
+                array_intersect($permissionNames, AdminOnlyPermissions::NAMES),
                 $currentPermissions->pluck('name')->all(),
             );
 

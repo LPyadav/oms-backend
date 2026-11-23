@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Users;
 
+use App\Constants\AdminOnlyPermissions;
 use App\Models\User;
 use App\Policies\UserPolicy;
 use App\Services\Audit\AccessAuditLogWriter;
@@ -41,7 +42,7 @@ final readonly class UserPermissionAssignmentService
     public function replace(User $actor, string $targetId, array $permissionNames): array
     {
         return DB::transaction(function () use ($actor, $targetId, $permissionNames): array {
-            ['actor' => $lockedActor] = $this->writeLock->acquire($actor);
+            ['adminRole' => $adminRole, 'actor' => $lockedActor] = $this->writeLock->acquire($actor);
             $this->authorize($lockedActor);
 
             $target = User::query()->lockForUpdate()->findOrFail($targetId);
@@ -62,6 +63,15 @@ final readonly class UserPermissionAssignmentService
 
             $before = $this->names($target->permissions, $guardName);
             $after = $this->names($permissions, $guardName);
+            $adminOnlyAdditions = array_diff(array_intersect($after, AdminOnlyPermissions::NAMES), $before);
+
+            if ($adminOnlyAdditions !== [] && ! $target->hasRole($adminRole)) {
+                throw ValidationException::withMessages([
+                    'direct_permissions' => Lang::string('api.users.admin_only_permissions', [
+                        'permissions' => implode(', ', $adminOnlyAdditions),
+                    ]),
+                ]);
+            }
 
             if ($before !== $after) {
                 $target->syncPermissions(...$permissions->all());

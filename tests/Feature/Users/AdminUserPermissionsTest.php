@@ -109,6 +109,79 @@ final class AdminUserPermissionsTest extends TestCase
         self::assertSame(['direct_permissions' => []], $clear->after_values);
     }
 
+    #[DataProvider('nonAdminRoles')]
+    public function test_non_admin_targets_cannot_receive_new_admin_only_direct_grants(string $role): void
+    {
+        $this->authenticate(User::factory()->create()->assignRole('admin'));
+        $target = User::factory()->create()->assignRole($role)->givePermissionTo('orders.create');
+
+        $this->patchJson($this->endpoint($target), [
+            'direct_permissions' => [
+                'users.manage',
+                'roles.manage',
+                'products.manage',
+                'customers.manage',
+                'audit.view',
+                'products.view',
+            ],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['direct_permissions'], 'errors.fields');
+
+        self::assertSame(['orders.create'], $target->refresh()->permissions->pluck('name')->all());
+        $this->assertDatabaseCount('access_audit_logs', 0);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function nonAdminRoles(): array
+    {
+        return [
+            'manager' => ['manager'],
+            'staff' => ['staff'],
+        ];
+    }
+
+    public function test_manager_can_keep_or_clear_existing_admin_only_direct_grants(): void
+    {
+        $this->authenticate(User::factory()->create()->assignRole('admin'));
+        $target = User::factory()->create()->assignRole('manager')->givePermissionTo('audit.view');
+        $endpoint = $this->endpoint($target);
+
+        $this->patchJson($endpoint, ['direct_permissions' => ['orders.assign', 'audit.view']])
+            ->assertOk()
+            ->assertJsonPath('data.direct_permissions', ['audit.view', 'orders.assign']);
+
+        $this->patchJson($endpoint, ['direct_permissions' => ['audit.view', 'roles.manage']])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['direct_permissions'], 'errors.fields');
+
+        $this->patchJson($endpoint, ['direct_permissions' => []])
+            ->assertOk()
+            ->assertJsonPath('data.direct_permissions', []);
+
+        $this->patchJson($endpoint, ['direct_permissions' => ['audit.view']])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['direct_permissions'], 'errors.fields');
+
+        self::assertFalse($target->refresh()->permissions()->exists());
+        $this->assertDatabaseCount('access_audit_logs', 2);
+    }
+
+    public function test_target_with_the_admin_role_can_receive_admin_only_direct_grants(): void
+    {
+        $this->authenticate(User::factory()->create()->assignRole('admin'));
+        $target = User::factory()->create()->assignRole('manager', 'admin');
+
+        $this->patchJson($this->endpoint($target), ['direct_permissions' => ['audit.view']])
+            ->assertOk()
+            ->assertJsonPath('data.direct_permissions', ['audit.view']);
+
+        self::assertTrue($target->refresh()->hasDirectPermission('audit.view'));
+        $this->assertDatabaseCount('access_audit_logs', 1);
+    }
+
     /**
      * @param  array<string, mixed>  $body
      */

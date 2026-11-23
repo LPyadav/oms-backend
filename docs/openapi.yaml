@@ -516,8 +516,10 @@ paths:
       description: >-
         Requires an active Admin with both the users.manage and roles.manage
         permissions. An empty list clears all direct grants. Role-inherited
-        permissions remain effective. Each change is audited in the same
-        transaction and repeating the same set creates no additional entry.
+        permissions remain effective. Admin-only permissions may be newly added
+        only to users with the built-in Admin role. Existing Admin-only direct
+        grants on other users may be retained or removed. Each change is audited
+        in the same transaction and repeating the same set creates no additional entry.
       requestBody:
         required: true
         content:
