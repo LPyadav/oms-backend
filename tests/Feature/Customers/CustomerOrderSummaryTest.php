@@ -8,6 +8,7 @@ use App\Enums\OrderStatus;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Orders\OrderPricingService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -98,6 +99,32 @@ final class CustomerOrderSummaryTest extends TestCase
                 'status' => 'cancelled',
                 'currency' => 'USD',
                 'grand_total_minor' => 700,
+            ]);
+    }
+
+    public function test_customer_lifetime_value_can_exceed_signed_64_bit_without_losing_precision(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $this->authenticate($manager);
+
+        $customer = Customer::factory()->create();
+        $orderCount = 1_025;
+        Order::factory()
+            ->for($customer)
+            ->for($manager, 'creator')
+            ->count($orderCount)
+            ->create([
+                'status' => OrderStatus::Pending,
+                'subtotal_minor' => OrderPricingService::MAX_MINOR_UNITS,
+                'grand_total_minor' => OrderPricingService::MAX_MINOR_UNITS,
+            ]);
+
+        $this->getJson($this->summaryPath($customer))
+            ->assertOk()
+            ->assertJsonPath('data.order_summary.total_orders', $orderCount)
+            ->assertJsonPath('data.order_summary.pending_orders', $orderCount)
+            ->assertJsonPath('data.order_summary.total_value_by_currency', [
+                ['currency' => 'USD', 'total_minor' => '9232379236109515775'],
             ]);
     }
 

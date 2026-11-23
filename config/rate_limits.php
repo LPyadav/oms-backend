@@ -29,4 +29,9 @@ return [
         'per_ip' => $positiveInteger('RATE_LIMIT_LOGIN_PER_IP', 30),
         'per_email' => $positiveInteger('RATE_LIMIT_LOGIN_PER_EMAIL', 5),
     ],
+
+    'password_change' => [
+        'per_account' => $positiveInteger('RATE_LIMIT_PASSWORD_CHANGE_PER_ACCOUNT', 6),
+        'window_minutes' => $positiveInteger('RATE_LIMIT_PASSWORD_CHANGE_WINDOW_MINUTES', 1),
+    ],
 ];

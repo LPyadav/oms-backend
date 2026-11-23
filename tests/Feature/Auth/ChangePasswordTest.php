@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Auth;
 
+use App\Constants\ApiErrorCode;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -72,6 +73,97 @@ final class ChangePasswordTest extends TestCase
 
         self::assertTrue(Hash::check(self::CURRENT_PASSWORD, $user->refresh()->getAuthPassword()));
         $this->getJson('/api/me')->assertOk();
+    }
+
+    public function test_replacement_must_not_verify_against_the_stored_password_hash(): void
+    {
+        Config::set([
+            'hashing.driver' => 'bcrypt',
+            'hashing.bcrypt.limit' => null,
+        ]);
+
+        $password = str_repeat('Ab7!', 18);
+        $hash = Hash::make($password);
+        $user = User::factory()->create(['password' => $hash]);
+        $token = $user->createToken('Current browser')->plainTextToken;
+
+        $this->withToken($token)
+            ->patchJson(self::ENDPOINT, [
+                'current_password' => $password.'Legacy suffix',
+                'password' => $password,
+                'password_confirmation' => $password,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.fields.password.0', 'The replacement password must be different from your current password.');
+
+        self::assertSame($hash, $user->refresh()->getAuthPassword());
+        self::assertSame(1, $user->tokens()->count());
+    }
+
+    public function test_password_change_limit_is_shared_by_an_accounts_tokens_and_resets_after_its_window(): void
+    {
+        Config::set([
+            'rate_limits.api.per_ip' => 10,
+            'rate_limits.password_change.per_account' => 1,
+            'rate_limits.password_change.window_minutes' => 2,
+        ]);
+        $this->freezeSecond();
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.25']);
+
+        $user = User::factory()->create(['password' => Hash::make(self::CURRENT_PASSWORD)]);
+        $otherUser = User::factory()->create(['password' => Hash::make(self::CURRENT_PASSWORD)]);
+        $token = $user->createToken('Current browser')->plainTextToken;
+        $otherDevice = $user->createToken('Other device')->plainTextToken;
+        $unrelatedToken = $otherUser->createToken('Other account')->plainTextToken;
+
+        $this->withToken($token)
+            ->patchJson(self::ENDPOINT, $this->changeBody('Wrong current password'))
+            ->assertUnprocessable();
+
+        Auth::forgetGuards();
+        $this->withToken($otherDevice)
+            ->patchJson(self::ENDPOINT, $this->changeBody())
+            ->assertTooManyRequests()
+            ->assertHeader('Retry-After', '120')
+            ->assertJsonPath('errors.code', ApiErrorCode::RATE_LIMIT_EXCEEDED);
+
+        Auth::forgetGuards();
+        $this->withToken($unrelatedToken)
+            ->patchJson(self::ENDPOINT, $this->changeBody())
+            ->assertOk();
+
+        $this->travel(2)->minutes();
+        Auth::forgetGuards();
+        $this->withToken($token)
+            ->patchJson(self::ENDPOINT, $this->changeBody())
+            ->assertOk();
+    }
+
+    public function test_unauthenticated_password_change_requests_only_consume_the_ip_quota(): void
+    {
+        Config::set([
+            'rate_limits.api.per_ip' => 3,
+            'rate_limits.password_change.per_account' => 1,
+        ]);
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.25']);
+
+        $user = User::factory()->create(['password' => Hash::make(self::CURRENT_PASSWORD)]);
+        $token = $user->createToken('Current browser')->plainTextToken;
+
+        $this->patchJson(self::ENDPOINT, $this->changeBody())->assertUnauthorized();
+        $this->withToken('invalid-token')
+            ->patchJson(self::ENDPOINT, $this->changeBody())
+            ->assertUnauthorized();
+
+        $this->withToken($token)
+            ->patchJson(self::ENDPOINT, $this->changeBody())
+            ->assertOk();
+
+        Auth::forgetGuards();
+        $this->withoutToken()
+            ->patchJson(self::ENDPOINT, $this->changeBody())
+            ->assertTooManyRequests()
+            ->assertJsonPath('errors.code', ApiErrorCode::RATE_LIMIT_EXCEEDED);
     }
 
     public function test_password_credentials_are_accepted_only_in_the_request_body(): void

@@ -132,6 +132,28 @@ final class OperationalAuditApiTest extends TestCase
             ->assertDontSee('not-for-output');
     }
 
+    public function test_operational_audit_pagination_uses_configured_page_sizes(): void
+    {
+        Config::set([
+            'pagination.operational_audit_logs.default_per_page' => 2,
+            'pagination.operational_audit_logs.max_per_page' => 3,
+        ]);
+
+        $this->authenticate(User::factory()->create()->assignRole('admin'));
+
+        $this->getJson(self::ENDPOINT)
+            ->assertOk()
+            ->assertJsonPath('meta.per_page', 2);
+
+        $this->getJson(self::ENDPOINT.'?per_page=3')
+            ->assertOk()
+            ->assertJsonPath('meta.per_page', 3);
+
+        $this->getJson(self::ENDPOINT.'?per_page=4')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('per_page', 'errors.fields');
+    }
+
     private function authenticate(User $user): void
     {
         Auth::forgetGuards();

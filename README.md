@@ -560,6 +560,12 @@ and the shared response schemas.
 | GET | /api/admin/audit-logs/{log} | Reads the event's permitted before and after values, including retained history for deleted orders. |
 | PATCH | /api/me/password | Checks the old password and revokes every bearer token after a successful change. |
 
+Both audit lists have a default page size of 25 and a default maximum of 100.
+Configure the access audit list with `PAGINATION_ACCESS_AUDIT_LOGS_DEFAULT_PER_PAGE`
+and `PAGINATION_ACCESS_AUDIT_LOGS_MAX_PER_PAGE`. Configure the operational list
+with `PAGINATION_OPERATIONAL_AUDIT_LOGS_DEFAULT_PER_PAGE` and
+`PAGINATION_OPERATIONAL_AUDIT_LOGS_MAX_PER_PAGE`.
+
 ### Authentication trade-off
 
 The original plan specified Sanctum session cookies and CSRF protection
@@ -631,12 +637,15 @@ the same health response through the Vite proxy.
 | `RATE_LIMIT_API_PER_IP` | 120 per minute | Shared IP quota across registered API routes |
 | `RATE_LIMIT_LOGIN_PER_IP` | 30 per minute | Additional login quota for the client IP |
 | `RATE_LIMIT_LOGIN_PER_EMAIL` | 5 per minute | Additional login quota for the normalized email, across IPs |
+| `RATE_LIMIT_PASSWORD_CHANGE_PER_ACCOUNT` | 6 requests | Additional password change quota for each authenticated account |
+| `RATE_LIMIT_PASSWORD_CHANGE_WINDOW_MINUTES` | 1 minute | Window for the account password change quota |
 
-Login checks all applicable quotas before password verification. Limiter keys
-use HMAC-SHA-256 with `APP_KEY` for IP and email identifiers. Multiple API
-instances must use the same `APP_KEY` and a shared limiter cache. Behind a
-reverse proxy, configure trusted proxies so Laravel resolves the correct client
-IP.
+Login checks all applicable quotas before password verification. Password
+changes add an authenticated account quota to the shared API IP limit.
+Limiter keys use HMAC-SHA-256 with `APP_KEY` for IP, email, and account
+identifiers. Multiple API instances must use the same `APP_KEY` and a shared
+limiter cache. Behind a reverse proxy, configure trusted proxies so Laravel
+resolves the correct client IP.
 
 ## Development checks
 

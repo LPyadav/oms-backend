@@ -131,9 +131,17 @@ final readonly class AuthenticationService
                 throw new AuthenticationException;
             }
 
-            if (! $this->hasher->check($currentPassword, $account->getAuthPassword())) {
+            $currentHash = $account->getAuthPassword();
+
+            if (! $this->hasher->check($currentPassword, $currentHash)) {
                 throw ValidationException::withMessages([
                     'current_password' => Lang::string('validation.current_password'),
+                ]);
+            }
+
+            if ($this->hasher->check($newPassword, $currentHash)) {
+                throw ValidationException::withMessages([
+                    'password' => Lang::string('api.auth.password_unchanged'),
                 ]);
             }
 

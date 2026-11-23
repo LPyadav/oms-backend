@@ -34,7 +34,7 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         ->name('auth.logout');
 
     Route::patch('/me/password', [AuthController::class, 'changePassword'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:password-change')
         ->name('auth.password.update');
 
     Route::get('/me', [AuthController::class, 'me'])

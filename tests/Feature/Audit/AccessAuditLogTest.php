@@ -104,4 +104,27 @@ final class AccessAuditLogTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['per_page', 'actor_id', 'target_type', 'target_id'], 'errors.fields');
     }
+
+    public function test_access_audit_pagination_uses_configured_page_sizes(): void
+    {
+        Config::set([
+            'pagination.access_audit_logs.default_per_page' => 2,
+            'pagination.access_audit_logs.max_per_page' => 3,
+        ]);
+
+        $admin = User::factory()->create()->assignRole('admin');
+        $this->withToken($admin->createToken('Audit test')->plainTextToken);
+
+        $this->getJson(self::ENDPOINT)
+            ->assertOk()
+            ->assertJsonPath('meta.per_page', 2);
+
+        $this->getJson(self::ENDPOINT.'?per_page=3')
+            ->assertOk()
+            ->assertJsonPath('meta.per_page', 3);
+
+        $this->getJson(self::ENDPOINT.'?per_page=4')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('per_page', 'errors.fields');
+    }
 }

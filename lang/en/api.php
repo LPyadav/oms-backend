@@ -7,6 +7,7 @@ return [
         'logged_in' => 'Logged in successfully.',
         'logged_out' => 'Logged out successfully.',
         'password_changed' => 'Password changed successfully.',
+        'password_unchanged' => 'The replacement password must be different from your current password.',
         'current_user_retrieved' => 'Authenticated user retrieved.',
         'invalid_credentials' => 'The email or password is incorrect.',
         'unauthenticated' => 'Authentication is required.',

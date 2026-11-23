@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Models\User;
 use App\Services\Auth\LoginEmail;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
     {
         RateLimiter::for('api', $this->apiLimit(...));
         RateLimiter::for('login', $this->loginLimits(...));
+        RateLimiter::for('password-change', $this->passwordChangeLimit(...));
     }
 
     private function apiLimit(Request $request): Limit
@@ -62,10 +64,28 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
         return $limits;
     }
 
+    private function passwordChangeLimit(Request $request): Limit
+    {
+        // Resolve the Bearer-only guard before authentication sets the default guard.
+        $account = $request->user('sanctum');
+
+        if (! $account instanceof User) {
+            return Limit::none();
+        }
+
+        return $this->limitFor(
+            'rate_limits.password_change.per_account',
+            'password-change-account',
+            (string) $account->id,
+            Config::integer('rate_limits.password_change.window_minutes'),
+        );
+    }
+
     private function limitFor(
         string $configKey,
         string $bucket,
         string $identifier,
+        int $windowMinutes = 1,
     ): Limit {
         $attempts = Config::integer($configKey);
 
@@ -89,7 +109,7 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
             $secret,
         );
 
-        return Limit::perMinute($attempts)->by($key);
+        return Limit::perMinute($attempts, $windowMinutes)->by($key);
     }
 
     private function clientIp(Request $request): string

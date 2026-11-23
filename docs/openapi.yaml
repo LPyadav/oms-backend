@@ -205,7 +205,6 @@ paths:
     get:
       tags: [Admin Users]
       summary: Get one user for the account editor
-      security: [{ bearerAuth: [] }]
       parameters:
         - name: user
           in: path
@@ -1890,7 +1889,7 @@ paths:
     patch:
       tags: [Authentication]
       summary: Change the current account password and revoke its API tokens
-      security: [{ bearerAuth: [] }]
+      description: The replacement must differ from the current password. An account-specific rate limit applies.
       requestBody:
         required: true
         content:
@@ -1916,7 +1915,6 @@ paths:
     get:
       tags: [Customers]
       summary: Get a customer's order counts, lifetime values, and recent orders
-      security: [{ bearerAuth: [] }]
       parameters:
         - name: customer
           in: path
@@ -1936,14 +1934,16 @@ paths:
     get:
       tags: [Audit]
       summary: List access audit records, newest first
-      security: [{ bearerAuth: [] }]
       parameters:
         - { name: action, in: query, schema: { type: string, maxLength: 64 } }
         - { name: actor_id, in: query, schema: { type: integer, minimum: 1 } }
         - { name: target_type, in: query, schema: { type: string, enum: [user, role] } }
         - { name: target_id, in: query, schema: { type: integer, minimum: 1 } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, default: 25 }
+          description: Page size. The maximum is configurable and defaults to 100.
       responses:
         '200':
           description: Paginated audit records. Requires an active Admin with audit.view.
@@ -1958,7 +1958,6 @@ paths:
     get:
       tags: [Audit]
       summary: Get one access audit record
-      security: [{ bearerAuth: [] }]
       parameters:
         - { name: log, in: path, required: true, schema: { type: integer, minimum: 1 } }
       responses:
@@ -1975,14 +1974,16 @@ paths:
     get:
       tags: [Audit]
       summary: List operational audit records, newest first
-      security: [{ bearerAuth: [] }]
       parameters:
         - { name: action, in: query, schema: { type: string, maxLength: 64 } }
         - { name: actor_id, in: query, schema: { type: integer, minimum: 1 } }
         - { name: target_type, in: query, schema: { type: string, enum: [order, customer, product] } }
         - { name: target_id, in: query, schema: { type: integer, minimum: 1 } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, default: 25 }
+          description: Page size. The maximum is configurable and defaults to 100.
         - { name: date_from, in: query, schema: { type: string, format: date } }
         - { name: date_to, in: query, schema: { type: string, format: date } }
       responses:
@@ -1999,7 +2000,6 @@ paths:
     get:
       tags: [Audit]
       summary: Get one operational audit record
-      security: [{ bearerAuth: [] }]
       parameters:
         - { name: log, in: path, required: true, schema: { type: integer, minimum: 1 } }
       responses:

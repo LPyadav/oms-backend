@@ -8,8 +8,10 @@ use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\Orders\OrderService;
+use App\Services\Reports\OrderReportTotals;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use stdClass;
 
 /**
  * @phpstan-type RecentOrder array{id: int, order_number: string, order_date: string, status: string, currency: string, grand_total_minor: int}
@@ -30,6 +32,7 @@ final readonly class CustomerOrderSummaryService
     public function __construct(
         private CustomerService $customers,
         private OrderService $orders,
+        private OrderReportTotals $reportTotals,
     ) {}
 
     /**
@@ -42,17 +45,18 @@ final readonly class CustomerOrderSummaryService
             $customer = $this->customers->find($actor, $customerId);
             $orders->where('customer_id', $customer->id);
 
-            /** @var Collection<int, object{currency: string, total_orders: int|string, pending_orders: int|string, completed_orders: int|string, cancelled_orders: int|string, total_minor: int|string}> $totals */
-            $totals = (clone $orders)->toBase()
+            $totalsQuery = (clone $orders)->toBase()
                 ->select('currency')
                 ->selectRaw('COUNT(*) AS total_orders')
                 ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending_orders', [OrderStatus::Pending->value])
                 ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS completed_orders', [OrderStatus::Completed->value])
                 ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS cancelled_orders', [OrderStatus::Cancelled->value])
-                ->selectRaw('SUM(grand_total_minor) AS total_minor')
                 ->groupBy('currency')
-                ->orderBy('currency')
-                ->get();
+                ->orderBy('currency');
+            $this->reportTotals->selectAmountSums($totalsQuery, ['grand_total_minor']);
+
+            /** @var Collection<int, stdClass&object{currency: string, total_orders: int|string, pending_orders: int|string, completed_orders: int|string, cancelled_orders: int|string}> $totals */
+            $totals = $totalsQuery->get();
 
             $summary = [
                 'total_orders' => 0,
@@ -69,7 +73,7 @@ final readonly class CustomerOrderSummaryService
                 $summary['cancelled_orders'] += (int) $total->cancelled_orders;
                 $summary['total_value_by_currency'][] = [
                     'currency' => $total->currency,
-                    'total_minor' => (string) $total->total_minor,
+                    'total_minor' => $this->reportTotals->readAmountSum($totalsQuery, $total, 'grand_total_minor')->toString(),
                 ];
             }
 

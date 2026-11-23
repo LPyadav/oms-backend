@@ -64,4 +64,12 @@ return [
         'PAGINATION_PRODUCTS_DEFAULT_PER_PAGE',
         'PAGINATION_PRODUCTS_MAX_PER_PAGE',
     ),
+    'access_audit_logs' => $pagination(
+        'PAGINATION_ACCESS_AUDIT_LOGS_DEFAULT_PER_PAGE',
+        'PAGINATION_ACCESS_AUDIT_LOGS_MAX_PER_PAGE',
+    ),
+    'operational_audit_logs' => $pagination(
+        'PAGINATION_OPERATIONAL_AUDIT_LOGS_DEFAULT_PER_PAGE',
+        'PAGINATION_OPERATIONAL_AUDIT_LOGS_MAX_PER_PAGE',
+    ),
 ];

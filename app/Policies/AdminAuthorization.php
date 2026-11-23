@@ -11,8 +11,8 @@ use Spatie\Permission\Guard;
 final class AdminAuthorization
 {
     /**
-     * @param  'users.manage'|'roles.manage'|'audit.view'|'audit.view'  $permission
-     * @param  'users.manage'|'roles.manage'|'audit.view'|'audit.view'  ...$additionalPermissions
+     * @param  'users.manage'|'roles.manage'|'audit.view'  $permission
+     * @param  'users.manage'|'roles.manage'|'audit.view'  ...$additionalPermissions
      */
     public function allows(User $actor, string $permission, string ...$additionalPermissions): bool
     {

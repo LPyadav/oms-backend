@@ -7,13 +7,10 @@ namespace App\Http\Requests\Audit;
 use App\Models\AccessAuditLog;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Config;
 
 final class ListAccessAuditLogsRequest extends FormRequest
 {
-    private const int DEFAULT_PER_PAGE = 25;
-
-    private const int MAX_PER_PAGE = 100;
-
     public function authorize(): bool
     {
         $actor = $this->user();
@@ -28,7 +25,7 @@ final class ListAccessAuditLogsRequest extends FormRequest
     {
         return array_replace([
             'page' => 1,
-            'per_page' => self::DEFAULT_PER_PAGE,
+            'per_page' => Config::integer('pagination.access_audit_logs.default_per_page'),
         ], $this->query->all());
     }
 
@@ -37,11 +34,12 @@ final class ListAccessAuditLogsRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxPage = intdiv(PHP_INT_MAX, self::MAX_PER_PAGE);
+        $maxPerPage = Config::integer('pagination.access_audit_logs.max_per_page');
+        $maxPage = intdiv(PHP_INT_MAX, $maxPerPage);
 
         return [
             'page' => ['bail', 'required', 'integer', 'min:1', 'max:'.$maxPage],
-            'per_page' => ['bail', 'required', 'integer', 'min:1', 'max:'.self::MAX_PER_PAGE],
+            'per_page' => ['bail', 'required', 'integer', 'min:1', 'max:'.$maxPerPage],
             'action' => ['bail', 'nullable', 'string', 'max:64'],
             'actor_id' => ['bail', 'sometimes', 'required', 'integer', 'min:1'],
             'target_type' => ['bail', 'nullable', 'string', 'in:user,role'],
