@@ -39,6 +39,8 @@ Route::middleware('auth:sanctum')->group(static function (): void {
 
     Route::get('/reports/orders', [ReportController::class, 'orderFulfillment'])
         ->name('reports.orders');
+    Route::get('/reports/sales-tax', [ReportController::class, 'salesTax'])
+        ->name('reports.sales-tax');
 
     Route::prefix('customers')->name('customers.')->group(static function (): void {
         Route::get('/', [CustomerController::class, 'index'])->name('index');

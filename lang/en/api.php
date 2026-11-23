@@ -29,6 +29,7 @@ return [
 
     'reports' => [
         'order_fulfillment_retrieved' => 'Order fulfillment report retrieved.',
+        'sales_tax_retrieved' => 'Sales and tax report retrieved.',
         'date_range_exceeded' => 'The report date range may span at most :days days.',
     ],
 

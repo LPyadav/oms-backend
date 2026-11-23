@@ -390,6 +390,28 @@ Set `REPORTS_DEFAULT_DAYS` and `REPORTS_MAX_DAYS` to configure the date
 window, up to 366 days. Set `PAGINATION_REPORTS_DEFAULT_PER_PAGE` and
 `PAGINATION_REPORTS_MAX_PER_PAGE` to configure page sizes up to 100.
 
+### Sales and tax report
+
+Send `GET /api/reports/sales-tax` with the same report permissions and
+pagination options. `date_from` and `date_to` are inclusive calendar dates
+in `DASHBOARD_TIMEZONE`. An omitted pair uses the same calendar window as
+the Order and Fulfillment report. The report includes non-deleted
+Completed orders whose `completed_at` falls on one of those local dates.
+A range containing only skipped dates returns no orders and preserves the
+date filters in the response. Rows sort by completion time descending,
+then ID descending. The response includes the reporting timezone and a
+UTC `snapshot_at`.
+
+Optional `customer_id` and `product_id` filters match saved order records.
+A product match includes the whole order and all of its stored amounts
+once. Use the row's order ID with `GET /api/orders/{order}` for details.
+
+Each row shows the stored subtotal, item discount, order discount, net total,
+tax, and final amount including tax. These amounts retain the pricing and tax
+applied at order completion, including order-level tax overrides. Report totals
+use the same filtered snapshot as the rows and are grouped by saved currency.
+Aggregate minor-unit amounts are decimal integer strings.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |

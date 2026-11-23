@@ -30,6 +30,8 @@
             <file>tests/Feature/Products/ProductManagementTest.php</file>
             <file>tests/Feature/Reports/OrderFulfillmentReportTest.php</file>
             <file>tests/Feature/Reports/OrderFulfillmentSnapshotTest.php</file>
+            <file>tests/Feature/Reports/SalesTaxReportTest.php</file>
+            <file>tests/Feature/Reports/SalesTaxSnapshotTest.php</file>
             <file>tests/Feature/Roles/AdminRoleManagementTest.php</file>
             <file>tests/Feature/Roles/RolesAndPermissionsSeederTest.php</file>
             <file>tests/Feature/Users/AdminUserManagementTest.php</file>
