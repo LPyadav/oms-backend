@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 #[Fillable([
     'product_id',
+    'order_id',
     'actor_id',
     'type',
     'quantity_before',
@@ -27,6 +28,10 @@ final class StockMovement extends Model
 
     public const TYPE_OPENING_BALANCE = 'opening_balance';
 
+    public const TYPE_ORDER_DEDUCTION = 'order_deduction';
+
+    public const TYPE_ORDER_RESTORATION = 'order_restoration';
+
     /**
      * @return array<string, string>
      */
@@ -34,6 +39,7 @@ final class StockMovement extends Model
     {
         return [
             'product_id' => 'integer',
+            'order_id' => 'integer',
             'actor_id' => 'integer',
             'quantity_before' => 'integer',
             'quantity_after' => 'integer',

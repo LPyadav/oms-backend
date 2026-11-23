@@ -11,6 +11,19 @@
         <testsuite name="MySQL regressions">
             <file>tests/Feature/Auth/LoginTest.php</file>
             <file>tests/Feature/Customers/CustomerManagementTest.php</file>
+            <file>tests/Feature/Orders/OrderActivityTest.php</file>
+            <file>tests/Feature/Orders/OrderAssigneeLookupTest.php</file>
+            <file>tests/Feature/Orders/OrderAssignmentConcurrencyTest.php</file>
+            <file>tests/Feature/Orders/OrderCreationIdempotencyTest.php</file>
+            <file>tests/Feature/Orders/OrderCreationConcurrencyTest.php</file>
+            <file>tests/Feature/Orders/OrderCrudConcurrencyTest.php</file>
+            <file>tests/Feature/Orders/OrderCrudContentionTest.php</file>
+            <file>tests/Feature/Orders/OrderExactLookupTest.php</file>
+            <file>tests/Feature/Orders/OrderListingTest.php</file>
+            <file>tests/Feature/Orders/OrderLifecycleTest.php</file>
+            <file>tests/Feature/Orders/OrderLifecycleConcurrencyTest.php</file>
+            <file>tests/Feature/Orders/OrderManagementTest.php</file>
+            <file>tests/Feature/Orders/OrderSystemActivityTest.php</file>
             <file>tests/Feature/Products/CatalogWriteConcurrencyTest.php</file>
             <file>tests/Feature/Products/ProductInventoryTest.php</file>
             <file>tests/Feature/Products/ProductManagementTest.php</file>

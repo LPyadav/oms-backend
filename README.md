@@ -156,6 +156,173 @@ revokes the token used for that request. Other device tokens can remain active.
 
 Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 
+### Orders
+
+| Method | Endpoint | Operation |
+| --- | --- | --- |
+| GET | /api/orders | List orders visible to the caller |
+| POST | /api/orders | Create a draft order |
+| POST | /api/orders/preview | Calculate pricing for a new or editable order |
+| GET | /api/orders/assignees | List active employees for order assignment |
+| GET | /api/orders/{order} | Read order details, notes, history, and system activity |
+| PATCH | /api/orders/{order} | Edit a draft or pending order |
+| DELETE | /api/orders/{order} | Soft-delete an eligible order |
+| POST | /api/orders/{order}/status | Change status and record the transition |
+| POST | /api/orders/{order}/assign | Assign or unassign the order |
+| POST | /api/orders/{order}/notes | Append a note |
+
+Use search to match order number, customer name, product name or SKU as stored on
+the order, and assigned employee name. Customer email is searched only within
+the caller’s customer contact scope. Combine search with status, priority,
+customer_id, assignee_id, date_from, and date_to. Date bounds are inclusive and
+can be supplied independently.
+
+Order responses include customer email, phone, and address when the caller has
+`customers.view`, or when the caller has `customers.view.assigned-orders` and
+is the current assignee. For other visible orders, those fields are `null`.
+
+For exact lookup, explicitly send `order_number` or `sku`. The `search`
+parameter keeps its literal substring behavior for every term. Exact
+filters trim surrounding whitespace and use equality under the stored
+column collation. The limits are 40 characters for `order_number` and 64 for
+`sku`. Blank, array and over-length values return `422 VALIDATION_FAILED`.
+
+The `sku` filter matches item SKU snapshots. An order with multiple
+matching items contributes one result to the page and one to the total.
+When combined with `search` or other filters, every criterion must match
+within the caller’s order visibility scope. Sorting and pagination apply
+to that filtered set.
+
+```http
+GET /api/orders?order_number=ORD-01KABCDEF23456789GHJKMNPQR
+GET /api/orders?sku=ABC-42&status=confirmed
+GET /api/orders?sku=ABC-42&search=fastener
+```
+
+Pass sort as order_date, total, status, priority, or customer and direction
+as asc or desc. Default sort is order_date desc, with order ID as a tie-breaker.
+page and per_page control server-side pagination. The default page size is 25
+and the default maximum is 100. Both are configurable.
+
+Numbered pages use an offset over the current visible results. The order ID
+tie-breaker gives a stable sequence while those results stay the same. An
+insert ahead of a page boundary between requests can move the last row of
+one page onto the next page. Refresh from page 1 to reload the current
+sequence and total.
+
+Customer sort and order-date pages after page 1 select page keys before
+loading full rows. The query still advances through the skipped keys and
+calculates an exact total for the current filters.
+
+Local MySQL 8.2.0 benchmarks used one sequential client with a 128 MiB
+InnoDB buffer pool. In the 50,000-order date-sort fixture without item rows,
+Manager page 400 at 100 orders per page improved from 400.8 to 46.7 ms p50
+and from 433.2 to 91.3 ms p95 across 10 samples per query. These timings
+cover the page SELECT. Its plan scanned 40,000 index entries and loaded
+100 full order rows.
+
+An earlier 50,000-order fixture with 250,000 item snapshots measured a
+no-match substring search at 5.30 s p50 and 35.85 s p95 across 12 local
+API requests, with most of the time spent counting matches. For a known
+identifier, use the indexed `order_number` or `sku` filter. Narrow
+substring searches with the relevant status, assignee or date filters.
+
+Order writes accept JSON. Send an active customer ID, an order date, and a
+non-empty list of distinct product IDs and positive quantities to create a
+draft. Optional fields include priority, an active assignee, an initial
+note, and fixed item and order discounts.
+
+Send one `Idempotency-Key` header with each new `POST /api/orders` request.
+Use a fresh value such as a UUID for each order and reuse the original key
+and payload for retries. Keys are scoped to the authenticated user.
+
+The first request and authorized replays return `201` with the same order ID
+and `Location`. A replay returns the current order details and checks
+current permissions. A changed valid payload with the same key returns
+`409 ORDER_IDEMPOTENCY_CONFLICT`. A replay after soft deletion returns
+`404`, and the key stays bound to the original order. A rolled-back attempt
+leaves the key available for retry.
+
+The server snapshots the product name, SKU, price, and applicable tax rate.
+All pricing values use integer minor units in the configured two-decimal
+business currency. For example, 2000 USD minor units represent $20.00.
+Keep ORDERS_CURRENCY aligned with the Catalog currency.
+
+The optional `order_tax_rate_basis_points` field sets one rate for the whole
+order. For example, `1000` means 10%. The server applies both discounts,
+calculates tax on the remaining order amount, rounds half-up once, and
+allocates the rounded amount across the items. Ties use product ID. The
+response includes the current order rate and each item's applied rate and
+tax amount. Their tax amounts sum to `tax_total_minor`.
+
+Create and new-order preview require `orders.update` for a numeric override.
+Draft and pending orders can update the rate by sending it with
+`expected_version`. The saved items are used when `items` is omitted.
+Omit the rate to keep the saved tax mode on edit and existing-order preview.
+An explicit `0` produces zero tax. An explicit `null` restores the saved item
+rates. New orders use catalog item rates when the order rate is omitted.
+Send legacy `items.*.tax_rate_basis_points` only when using item-based tax
+and omitting the order rate from the request.
+
+PATCH accepts expected_version in its JSON body. DELETE accepts it in the
+query string. A stale version returns 409 ORDER_VERSION_CONFLICT and the saved version in
+meta.version. An edit preview requires the complete items array. Set order_id
+to reuse existing snapshots and the saved order discount. Supply an explicit
+order_discount_minor to preview a different discount.
+
+Order status advances from Draft to Pending, Confirmed, Processing, Ready,
+and Completed. Admin and Manager can cancel through Ready with the required
+grants. Staff with assigned-status permission can move assigned orders from
+Confirmed to Processing and from Processing to Ready. Completed and Cancelled
+are terminal.
+
+Send status, expected_version, and optional remarks as JSON to change the
+status. Confirmation deducts stock once. Cancellation restores the actual
+deduction, if one exists. Stock, history, and audit update in the same
+transaction. Completion records completed_at for reporting.
+
+Order create, edit, delete, status, assignment, and note writes use bounded
+transaction retries. Exhausted lock contention returns
+`503 WRITE_CONTENTION` with `Retry-After` and `X-Request-ID`. Configure the
+attempt count with `ORDERS_WRITE_ATTEMPTS` and the retry interval with
+`ORDERS_RETRY_AFTER_SECONDS`. Wait for the retry interval before resending the
+request. For creation, reuse the original `Idempotency-Key`. For a versioned
+write that returns `409 ORDER_VERSION_CONFLICT`, fetch the current order and
+review the change before retrying.
+
+Use `GET /api/orders/assignees` to populate the assignee selector. The
+caller must be active and have `orders.view.any` and `orders.assign`.
+The lookup lists active users by name ignoring case, then by ID. Each entry in
+`data.assignees` contains only `id` and `name`.
+
+Pass an optional `search` query parameter to match a literal substring
+of the name, ignoring case. Leading and trailing whitespace is trimmed,
+and a blank term is ignored. The maximum search length is 255 characters.
+Use `page` and `per_page` to page through matches. The page size defaults
+to 25 with a maximum of 100. Configure those limits with
+`PAGINATION_ORDER_ASSIGNEES_DEFAULT_PER_PAGE` and
+`PAGINATION_ORDER_ASSIGNEES_MAX_PER_PAGE`.
+
+The lookup supports selection. Order creation and assignment revalidate
+new assignees within the write transaction.
+
+Assignment takes assignee_id and expected_version. Supply null to unassign.
+Changes require an active assignee and an eligible order. Assignment history
+shows the old and new assignee IDs, acting user, and time.
+
+To append a note, send body as JSON. The server records the authenticated
+author. Staff with assigned-note permission can add notes to their own
+assigned orders. Notes are append-only and preserve the order version.
+
+Order detail responses include `data.order.system_activity` for callers
+who can view the order. Each entry provides `id`, `action`, `actor_id`,
+`actor_name` when available, and the ISO 8601 `created_at` timestamp.
+The two actions are `order.created` and `order.updated`. Entries appear
+newest first, with higher IDs first when timestamps match. The default
+limit is 50 entries. Set `ORDERS_SYSTEM_ACTIVITY_LIMIT` to a value from
+1 to 200. Notes, status history, and assignment history are still
+available in their respective fields.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |
@@ -288,3 +455,11 @@ on `127.0.0.1`, runs PHPUnit, and removes both after the run. The provisioning
 connection defaults to port `3306`, user `root`, and an empty password. Override
 these through the process environment variables `OMS_MYSQL_PORT`,
 `OMS_MYSQL_ADMIN_USER`, and `OMS_MYSQL_ADMIN_PASSWORD`.
+
+The PHPUnit process timeout defaults to 600 seconds. Set `OMS_MYSQL_TIMEOUT_SECONDS`
+to a positive whole number of seconds in the shell to override it.
+
+```powershell
+$env:OMS_MYSQL_TIMEOUT_SECONDS = '900'
+php tests/run-mysql.php
+```

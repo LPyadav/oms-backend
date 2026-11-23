@@ -1,0 +1,632 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Orders;
+
+use App\Constants\ApiErrorCode;
+use App\Enums\OrderPriority;
+use App\Enums\OrderStatus;
+use App\Models\AuditLog;
+use App\Models\Customer;
+use App\Models\Order;
+use App\Models\Product;
+use App\Models\User;
+use App\Services\Orders\OrderService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Config;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\TestCase;
+
+/** @phpstan-import-type OrderInputItem from OrderService */
+final class OrderManagementTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private const string ENDPOINT = '/api/orders';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Config::set([
+            'app.key' => 'base64:'.base64_encode(str_repeat('t', 32)),
+            'rate_limits.api.per_ip' => 30,
+            'orders.currency' => 'USD',
+        ]);
+
+        $this->withHeader('Idempotency-Key', 'order-management-test');
+
+    }
+
+    public function test_manager_creates_an_assigned_draft_with_a_note_and_server_calculated_totals(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $staff = User::factory()->create()->assignRole('staff');
+        $customer = Customer::factory()->create();
+        $first = Product::factory()->create(['name' => 'Tool cabinet', 'price' => '100.00', 'tax_rate' => '10.00', 'stock_quantity' => 8]);
+        $second = Product::factory()->create(['price' => '50.00', 'tax_rate' => '10.00', 'stock_quantity' => 5]);
+
+        $this->useBearerFor($manager);
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [
+                ['product_id' => $first->id, 'quantity' => 2],
+                ['product_id' => $second->id, 'quantity' => 3],
+            ]),
+            'priority' => 'high',
+            'assignee_id' => $staff->id,
+            'note' => 'Confirm the collection time.',
+            'order_discount_minor' => 2_000,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.order.status', 'draft')
+            ->assertJsonPath('data.order.priority', 'high')
+            ->assertJsonPath('data.order.version', 1)
+            ->assertJsonPath('data.order.currency', 'USD')
+            ->assertJsonPath('data.order.customer.id', $customer->id)
+            ->assertJsonPath('data.order.assignee.id', $staff->id)
+            ->assertJsonPath('data.order.notes.0.body', 'Confirm the collection time.')
+            ->assertJsonPath('data.order.notes.0.author.id', $manager->id)
+            ->assertJsonPath('data.order.subtotal_minor', 35_000)
+            ->assertJsonPath('data.order.discount_total_minor', 2_000)
+            ->assertJsonPath('data.order.tax_total_minor', 3_300)
+            ->assertJsonPath('data.order.grand_total_minor', 36_300)
+            ->assertJsonPath('data.order.items.0.product_name', 'Tool cabinet')
+            ->assertJsonPath('data.order.items.0.product_sku', $first->sku)
+            ->assertJsonPath('data.order.items.0.unit_price_minor', 10_000)
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.items.1.allocated_order_discount_minor', 857);
+
+        $order = Order::query()->sole();
+        $this->postJson(self::ENDPOINT.'/preview', [
+            'order_id' => $order->id,
+            'items' => [
+                ['product_id' => $first->id, 'quantity' => 2],
+                ['product_id' => $second->id, 'quantity' => 3],
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.pricing.order_discount_minor', 2_000)
+            ->assertJsonPath('data.pricing.grand_total_minor', 36_300);
+        self::assertSame($manager->id, $order->created_by);
+        $this->assertDatabaseHas('order_notes', [
+            'order_id' => $order->id,
+            'author_id' => $manager->id,
+            'body' => 'Confirm the collection time.',
+        ]);
+
+        $created = AuditLog::query()->where('action', 'order.created')->sole();
+        self::assertSame($manager->id, $created->actor_id);
+        self::assertSame('order', $created->target_type);
+        self::assertSame($order->id, $created->target_id);
+        self::assertNull($created->before_values);
+        self::assertSame(36_300, $created->after_values['grand_total_minor']);
+
+        $assigned = AuditLog::query()->where('action', 'order.assigned')->sole();
+        self::assertSame(['assignee_id' => null], $assigned->before_values);
+        self::assertSame(['assignee_id' => $staff->id], $assigned->after_values);
+
+        self::assertSame(8, $first->refresh()->stock_quantity);
+        self::assertSame(5, $second->refresh()->stock_quantity);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_create_time_note_requires_its_own_permission(): void
+    {
+        $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $payload = [
+            ...self::payload($customer, [['product_id' => $product->id, 'quantity' => 1]]),
+            'note' => 'Confirm the collection time.',
+        ];
+
+        $this->withToken($actor->createToken('create order with note')->plainTextToken);
+        $this->postJson(self::ENDPOINT, $payload)
+            ->assertForbidden()
+            ->assertJsonPath('errors.code', ApiErrorCode::ACCESS_FORBIDDEN);
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+        $this->assertDatabaseCount('order_notes', 0);
+        $this->assertDatabaseCount('order_creation_keys', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+
+        $actor->givePermissionTo('orders.notes.create.any');
+        Auth::forgetGuards();
+
+        $this->postJson(self::ENDPOINT, $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.order.notes.0.body', $payload['note'])
+            ->assertJsonPath('data.order.notes.0.author.id', $actor->id);
+    }
+
+    public function test_manager_cannot_delete_even_with_the_delete_permission(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $manager->givePermissionTo('orders.delete');
+        $order = Order::factory()->create(['created_by' => $manager->id]);
+
+        $this->useBearerFor($manager);
+        $this->deleteJson(self::ENDPOINT.'/'.$order->id.'?expected_version=1')
+            ->assertForbidden()
+            ->assertJsonPath('errors.code', ApiErrorCode::ACCESS_FORBIDDEN);
+
+        self::assertFalse($order->refresh()->trashed());
+        self::assertSame(1, $order->version);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    public function test_staff_list_and_show_return_only_assigned_orders(): void
+    {
+        $staff = User::factory()->create()->assignRole('staff');
+        $otherStaff = User::factory()->create()->assignRole('staff');
+        $assigned = Order::factory()->create(['assignee_id' => $staff->id]);
+        $other = Order::factory()->create(['assignee_id' => $otherStaff->id]);
+        Order::factory()->create();
+
+        $this->getJson(self::ENDPOINT)->assertUnauthorized();
+        $this->useBearerFor($staff);
+
+        $this->getJson(self::ENDPOINT.'?per_page=1')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonCount(1, 'data.orders')
+            ->assertJsonPath('data.orders.0.id', $assigned->id);
+
+        $this->getJson(self::ENDPOINT.'/'.$assigned->id)
+            ->assertOk()
+            ->assertJsonPath('data.order.id', $assigned->id);
+        $this->getJson(self::ENDPOINT.'/'.$other->id)
+            ->assertNotFound()
+            ->assertJsonPath('errors.code', ApiErrorCode::RESOURCE_NOT_FOUND);
+        $this->patchJson(self::ENDPOINT.'/'.$assigned->id, ['expected_version' => 1, 'priority' => 'high'])
+            ->assertForbidden();
+    }
+
+    public function test_versioned_edits_keep_existing_snapshots_and_price_new_products(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $customer = Customer::factory()->create();
+        $existing = Product::factory()->create(['name' => 'Original name', 'price' => '100.00', 'tax_rate' => '10.00']);
+        $additional = Product::factory()->create(['price' => '60.00', 'tax_rate' => '5.00']);
+        $this->useBearerFor($admin);
+        $this->postJson(self::ENDPOINT, self::payload($customer, [
+            ['product_id' => $existing->id, 'quantity' => 1],
+        ]))->assertCreated();
+
+        $order = Order::query()->sole();
+        $path = self::ENDPOINT.'/'.$order->id;
+        $existing->update(['name' => 'New catalog name', 'price' => '160.00', 'tax_rate' => '18.00']);
+        $items = [
+            ['product_id' => $existing->id, 'quantity' => 2],
+            ['product_id' => $additional->id, 'quantity' => 1],
+        ];
+
+        $this->postJson(self::ENDPOINT.'/preview', ['order_id' => $order->id, 'items' => $items])
+            ->assertOk()
+            ->assertJsonPath('data.pricing.grand_total_minor', 28_300);
+        $this->assertDatabaseCount('order_items', 1);
+        $this->assertDatabaseCount('audit_logs', 1);
+
+        $this->patchJson($path, ['expected_version' => 1, 'items' => $items])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 2)
+            ->assertJsonPath('data.order.grand_total_minor', 28_300)
+            ->assertJsonPath('data.order.items.0.product_name', 'Original name')
+            ->assertJsonPath('data.order.items.0.unit_price_minor', 10_000)
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.items.1.product_id', $additional->id)
+            ->assertJsonPath('data.order.items.1.unit_price_minor', 6_000)
+            ->assertJsonPath('data.order.items.1.tax_rate_basis_points', 500);
+
+        $this->patchJson($path, ['expected_version' => 1, 'priority' => 'high'])
+            ->assertConflict()
+            ->assertJsonPath('errors.code', ApiErrorCode::ORDER_VERSION_CONFLICT)
+            ->assertJsonPath('meta.version', 2);
+
+        $lineIds = $order->items()->pluck('id')->all();
+        $this->patchJson($path, ['expected_version' => 2, 'items' => $items])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 2);
+        self::assertSame($lineIds, $order->items()->pluck('id')->all());
+
+        self::assertSame(OrderPriority::Normal, $order->refresh()->priority);
+        self::assertSame(2, $order->version);
+        $this->assertDatabaseCount('order_items', 2);
+        $this->assertDatabaseCount('audit_logs', 2);
+        $this->assertDatabaseCount('stock_movements', 0);
+
+        $audit = AuditLog::query()->where('action', 'order.updated')->sole();
+        self::assertSame($admin->id, $audit->actor_id);
+        self::assertSame(11_000, data_get($audit->before_values, 'grand_total_minor'));
+        self::assertSame(28_300, $audit->after_values['grand_total_minor']);
+    }
+
+    public function test_creator_without_update_permission_can_use_default_tax_but_cannot_override_it(): void
+    {
+        $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '100.00', 'tax_rate' => '18.00']);
+        $item = ['product_id' => $product->id, 'quantity' => 1];
+        $overridden = [...$item, 'tax_rate_basis_points' => 0];
+
+        $this->useBearerFor($actor);
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => [$item]])->assertOk()
+            ->assertJsonPath('data.pricing.tax_total_minor', 1_800);
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => [$overridden]])->assertForbidden();
+        $this->postJson(self::ENDPOINT, self::payload($customer, [$overridden]))->assertForbidden();
+        $this->postJson(self::ENDPOINT.'/preview', ['items' => [$item], 'order_tax_rate_basis_points' => 0])->assertForbidden();
+        $this->postJson(self::ENDPOINT, [...self::payload($customer, [$item]), 'order_tax_rate_basis_points' => 0])->assertForbidden();
+        $this->assertDatabaseCount('order_creation_keys', 0);
+        $this->postJson(self::ENDPOINT, self::payload($customer, [$item]))->assertCreated()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 1_800)
+            ->assertJsonPath('data.order.tax_total_minor', 1_800);
+    }
+
+    public function test_order_tax_override_reprices_an_edit_and_records_previous_and_new_tax_in_the_audit(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '100.00', 'tax_rate' => '18.00']);
+        $item = ['product_id' => $product->id, 'quantity' => 1];
+
+        $this->useBearerFor($manager);
+        $this->postJson(self::ENDPOINT, self::payload($customer, [$item]))->assertCreated();
+        $order = Order::query()->sole();
+        $path = self::ENDPOINT.'/'.$order->id;
+        $product->update(['tax_rate' => '20.00']);
+        $override = [...$item, 'tax_rate_basis_points' => 0];
+
+        $this->postJson(self::ENDPOINT.'/preview', ['order_id' => $order->id, 'items' => [$override]])->assertOk()
+            ->assertJsonPath('data.pricing.tax_total_minor', 0)
+            ->assertJsonPath('data.pricing.grand_total_minor', 10_000);
+        $this->patchJson($path, ['expected_version' => 1, 'items' => [$override]])->assertOk()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.grand_total_minor', 10_000)
+            ->assertJsonPath('data.order.version', 2);
+        $this->patchJson($path, ['expected_version' => 2, 'items' => [$item]])->assertOk()
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.version', 2);
+
+        $audit = AuditLog::query()->where('action', 'order.updated')->sole();
+        self::assertSame($manager->id, $audit->actor_id);
+        self::assertSame(1_800, data_get($audit->before_values, 'items.0.tax_rate_basis_points'));
+        self::assertSame(0, data_get($audit->after_values, 'items.0.tax_rate_basis_points'));
+        self::assertSame('20.00', $product->refresh()->tax_rate);
+    }
+
+    public function test_item_tax_override_must_be_an_integer_between_zero_and_ten_thousand(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $this->useBearerFor($admin);
+
+        foreach ([-1, 10_001, '500', 1.5, null] as $rate) {
+            $this->postJson(self::ENDPOINT, [
+                'customer_id' => $customer->id,
+                'order_date' => '2026-11-22',
+                'items' => [['product_id' => $product->id, 'quantity' => 1, 'tax_rate_basis_points' => $rate]],
+            ])->assertUnprocessable()
+                ->assertJsonValidationErrors(['items.0.tax_rate_basis_points'], 'errors.fields');
+        }
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_order_total_tax_rounds_once_after_discounts_and_preview_matches_create(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $first = Product::factory()->create(['price' => '0.06', 'tax_rate' => '20.00']);
+        $second = Product::factory()->create(['price' => '0.06', 'tax_rate' => '40.00']);
+        $items = [
+            ['product_id' => $second->id, 'quantity' => 1],
+            ['product_id' => $first->id, 'quantity' => 1],
+        ];
+        $taxOverride = ['order_discount_minor' => 2, 'order_tax_rate_basis_points' => 1_000];
+
+        $this->useBearerFor($manager);
+        $preview = $this->postJson(self::ENDPOINT.'/preview', ['items' => $items, ...$taxOverride])
+            ->assertOk()
+            ->assertJsonPath('data.pricing.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.subtotal_minor', 12)
+            ->assertJsonPath('data.pricing.discount_total_minor', 2)
+            ->assertJsonPath('data.pricing.tax_total_minor', 1)
+            ->assertJsonPath('data.pricing.grand_total_minor', 11)
+            ->assertJsonPath('data.pricing.items.0.tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.items.1.tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.items.0.tax_minor', 0)
+            ->assertJsonPath('data.pricing.items.1.tax_minor', 1)
+            ->assertJsonPath('data.pricing.items.0.line_total_minor', 5)
+            ->assertJsonPath('data.pricing.items.1.line_total_minor', 6);
+
+        $this->assertDatabaseCount('orders', 0);
+        $created = $this->postJson(self::ENDPOINT, [...self::payload($customer, $items), ...$taxOverride])
+            ->assertCreated()
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.tax_total_minor', $preview->json('data.pricing.tax_total_minor'))
+            ->assertJsonPath('data.order.grand_total_minor', $preview->json('data.pricing.grand_total_minor'));
+        self::assertEquals($preview->json('data.pricing.items'), $created->json('data.order.items'));
+    }
+
+    public function test_tax_only_patch_preserves_the_override_when_omitted_and_restores_the_saved_rate_on_reset(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '100.00', 'tax_rate' => '18.00']);
+        $items = [['product_id' => $product->id, 'quantity' => 1]];
+        $this->useBearerFor($manager);
+
+        $this->postJson(self::ENDPOINT, self::payload($customer, $items))->assertCreated()
+            ->assertJsonStructure(['data' => ['order' => ['order_tax_rate_basis_points']]])
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', null)
+            ->assertJsonPath('data.order.tax_total_minor', 1_800);
+
+        $order = Order::query()->sole();
+        $order->items()->update(['base_tax_rate_basis_points' => null]);
+        $product->update(['tax_rate' => '20.00']);
+        $path = self::ENDPOINT.'/'.$order->id;
+
+        $this->patchJson($path, ['expected_version' => 1, 'order_tax_rate_basis_points' => 1_000])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 2)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.tax_total_minor', 1_000);
+        $this->postJson(self::ENDPOINT.'/preview', ['order_id' => $order->id, 'items' => $items])
+            ->assertOk()
+            ->assertJsonPath('data.pricing.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.pricing.tax_total_minor', 1_000);
+        $this->patchJson($path, ['expected_version' => 2, 'order_discount_minor' => 1_000])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 3)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 1_000)
+            ->assertJsonPath('data.order.tax_total_minor', 900);
+        $this->patchJson($path, ['expected_version' => 3, 'order_tax_rate_basis_points' => 0])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 4)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.items.0.tax_rate_basis_points', 0)
+            ->assertJsonPath('data.order.tax_total_minor', 0);
+
+        $preview = $this->postJson(self::ENDPOINT.'/preview', [
+            'order_id' => $order->id,
+            'items' => $items,
+            'order_tax_rate_basis_points' => null,
+        ])->assertOk()
+            ->assertJsonPath('data.pricing.order_tax_rate_basis_points', null)
+            ->assertJsonPath('data.pricing.items.0.tax_rate_basis_points', 1_800)
+            ->assertJsonPath('data.pricing.tax_total_minor', 1_620);
+        $reset = $this->patchJson($path, ['expected_version' => 4, 'order_tax_rate_basis_points' => null])
+            ->assertOk()
+            ->assertJsonPath('data.order.version', 5)
+            ->assertJsonPath('data.order.order_tax_rate_basis_points', null)
+            ->assertJsonPath('data.order.grand_total_minor', 10_620);
+        self::assertEquals($preview->json('data.pricing.items'), $reset->json('data.order.items'));
+
+        $audit = AuditLog::query()->where('action', 'order.updated')->latest('id')->firstOrFail();
+        self::assertSame($manager->id, $audit->actor_id);
+        self::assertSame(0, data_get($audit->before_values, 'order_tax_rate_basis_points'));
+        self::assertArrayHasKey('order_tax_rate_basis_points', $audit->after_values);
+        self::assertNull($audit->after_values['order_tax_rate_basis_points']);
+        self::assertSame(1_620, $audit->after_values['tax_total_minor']);
+    }
+
+    public function test_order_tax_override_rejects_invalid_rates_and_ambiguous_item_overrides(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $item = ['product_id' => $product->id, 'quantity' => 1];
+        $payload = self::payload($customer, [$item]);
+        $this->useBearerFor($manager);
+
+        foreach ([-1, 10_001, '1000', '  ', 10.5, false, []] as $rate) {
+            $this->postJson(self::ENDPOINT, [...$payload, 'order_tax_rate_basis_points' => $rate])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        }
+
+        $itemOverride = [...$item, 'tax_rate_basis_points' => 500];
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [$itemOverride]),
+            'order_tax_rate_basis_points' => 1_000,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        $this->assertDatabaseCount('orders', 0);
+
+        $this->postJson(self::ENDPOINT, [...$payload, 'order_tax_rate_basis_points' => 1_000])->assertCreated();
+        $order = Order::query()->sole();
+        $this->patchJson(self::ENDPOINT.'/'.$order->id, [
+            'expected_version' => 1,
+            'items' => [$itemOverride],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        $this->postJson(self::ENDPOINT.'/preview', [
+            'order_id' => $order->id,
+            'items' => [$itemOverride],
+            'order_tax_rate_basis_points' => null,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['order_tax_rate_basis_points'], 'errors.fields');
+        self::assertSame(1, $order->refresh()->version);
+    }
+
+    public function test_order_total_tax_cannot_be_changed_after_confirmation_or_cancellation(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $this->useBearerFor($manager);
+
+        foreach ([OrderStatus::Confirmed, OrderStatus::Completed, OrderStatus::Cancelled] as $status) {
+            $order = Order::factory()->create(['status' => $status]);
+            $this->patchJson(self::ENDPOINT.'/'.$order->id, [
+                'expected_version' => $order->version,
+                'order_tax_rate_basis_points' => 1_000,
+            ])->assertUnprocessable()
+                ->assertJsonValidationErrors(['status'], 'errors.fields');
+            self::assertNull($order->refresh()->order_tax_rate_basis_points);
+        }
+
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
+    #[DataProvider('terminalOrderStatuses')]
+    public function test_terminal_order_rejects_pricing_and_date_edits(OrderStatus $status): void
+    {
+        $this->useBearerFor(User::factory()->create()->assignRole('manager'));
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create(['price' => '40.00', 'tax_rate' => '5.00']);
+
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [['product_id' => $product->id, 'quantity' => 1]]),
+            'order_discount_minor' => 300,
+            'order_tax_rate_basis_points' => 1_000,
+        ])->assertCreated();
+
+        $order = Order::query()->sole();
+        $order->forceFill([
+            'status' => $status,
+            'completed_at' => $status === OrderStatus::Completed ? now()->toImmutable() : null,
+        ])->saveOrFail();
+        $order->refresh();
+        $savedOrder = $order->getRawOriginal();
+        $savedItem = $order->items()->sole()->getRawOriginal();
+
+        foreach ([
+            'pricing' => [
+                'order_discount_minor' => 600,
+                'items' => [['product_id' => $product->id, 'quantity' => 2, 'item_discount_minor' => 100]],
+            ],
+            'date' => ['order_date' => '2026-11-23'],
+        ] as $edit => $changes) {
+            $this->patchJson(self::ENDPOINT.'/'.$order->id, [
+                'expected_version' => $order->version,
+                ...$changes,
+            ])->assertUnprocessable()
+                ->assertJsonPath('errors.code', ApiErrorCode::VALIDATION_FAILED)
+                ->assertJsonValidationErrors(['status'], 'errors.fields');
+
+            self::assertSame($savedOrder, $order->refresh()->getRawOriginal(), "Order changed after the rejected {$edit} edit.");
+            self::assertSame($savedItem, $order->items()->sole()->getRawOriginal(), "Item changed after the rejected {$edit} edit.");
+        }
+
+        $this->assertDatabaseCount('audit_logs', 1);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_admin_soft_delete_preserves_order_lines_and_audit_history(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $this->useBearerFor($admin);
+        $this->postJson(self::ENDPOINT, self::payload($customer, [
+            ['product_id' => $product->id, 'quantity' => 1],
+        ]))->assertCreated();
+
+        $order = Order::query()->sole();
+        $path = self::ENDPOINT.'/'.$order->id;
+
+        $this->deleteJson($path, ['expected_version' => 1])->assertUnprocessable()
+            ->assertJsonValidationErrors(['expected_version'], 'errors.fields');
+        $this->deleteJson($path.'?expected_version=2')->assertConflict()
+            ->assertJsonPath('meta.version', 1);
+        $this->deleteJson($path.'?expected_version=1')->assertOk();
+        $this->assertSoftDeleted('orders', ['id' => $order->id]);
+        $this->getJson($path)->assertNotFound();
+        $this->assertDatabaseHas('order_items', ['order_id' => $order->id, 'product_id' => $product->id]);
+        $this->assertDatabaseCount('audit_logs', 2);
+        $this->assertDatabaseCount('stock_movements', 0);
+
+        $audit = AuditLog::query()->where('action', 'order.deleted')->sole();
+        self::assertSame($admin->id, $audit->actor_id);
+        self::assertSame($order->id, $audit->target_id);
+        self::assertNull(data_get($audit->before_values, 'deleted_at'));
+        self::assertNotNull($audit->after_values['deleted_at']);
+        self::assertSame(2, $audit->after_values['version']);
+    }
+
+    public function test_create_rolls_back_header_lines_and_note_when_audit_save_fails(): void
+    {
+        $this->useBearerFor(User::factory()->create()->assignRole('manager'));
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        AuditLog::saving(static fn (): bool => false);
+
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [['product_id' => $product->id, 'quantity' => 1]]),
+            'note' => 'This note must roll back with the order.',
+        ])
+            ->assertInternalServerError()
+            ->assertJsonPath('errors.code', ApiErrorCode::INTERNAL_SERVER_ERROR);
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+        $this->assertDatabaseCount('order_notes', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_create_rejects_query_only_fields_invalid_items_and_forged_values(): void
+    {
+        $this->useBearerFor(User::factory()->create()->assignRole('manager'));
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+        $items = [['product_id' => $product->id, 'quantity' => 1]];
+        $payload = self::payload($customer, $items);
+
+        $this->postJson(self::ENDPOINT.'?customer_id='.$customer->id, [
+            'order_date' => $payload['order_date'],
+            'items' => $items,
+        ])->assertUnprocessable()->assertJsonValidationErrors(['customer_id'], 'errors.fields');
+
+        $this->postJson(self::ENDPOINT, [...$payload, 'items' => (object) $items])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['items'], 'errors.fields');
+
+        $this->postJson(self::ENDPOINT, [...$payload, 'items' => [['product_id' => 999_999, 'quantity' => 1]]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['items.0.product_id'], 'errors.fields');
+
+        $this->postJson(self::ENDPOINT, [...$payload, 'grand_total_minor' => 1, 'status' => 'confirmed'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['body'], 'errors.fields');
+
+        $this->postJson(self::ENDPOINT, [
+            ...$payload,
+            'items' => [[...$items[0], 'unit_price_minor' => 1]],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['items.0'], 'errors.fields');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    /** @return array<string, array{OrderStatus}> */
+    public static function terminalOrderStatuses(): array
+    {
+        return [
+            'completed' => [OrderStatus::Completed],
+            'cancelled' => [OrderStatus::Cancelled],
+        ];
+    }
+
+    private function useBearerFor(User $actor): void
+    {
+        Auth::forgetGuards();
+        $this->withToken($actor->createToken('order-test')->plainTextToken);
+    }
+
+    /**
+     * @param  list<OrderInputItem>  $items
+     * @return array{customer_id: int, order_date: string, items: list<OrderInputItem>}
+     */
+    private static function payload(Customer $customer, array $items): array
+    {
+        return [
+            'customer_id' => $customer->id,
+            'order_date' => '2026-11-22',
+            'items' => $items,
+        ];
+    }
+}

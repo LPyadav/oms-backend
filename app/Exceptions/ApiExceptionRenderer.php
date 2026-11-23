@@ -8,6 +8,11 @@ use App\Constants\ApiErrorCode;
 use App\Exceptions\Auth\InvalidCredentialsException;
 use App\Exceptions\Catalog\CatalogWriteContentionException;
 use App\Exceptions\Inventory\StockVersionConflictException;
+use App\Exceptions\Orders\OrderActivityContentionException;
+use App\Exceptions\Orders\OrderIdempotencyConflictException;
+use App\Exceptions\Orders\OrderLifecycleContentionException;
+use App\Exceptions\Orders\OrderVersionConflictException;
+use App\Exceptions\Orders\OrderWriteContentionException;
 use App\Exceptions\Users\LastActiveAdminException;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\AuthenticationException;
@@ -42,14 +47,27 @@ final readonly class ApiExceptionRenderer
             return $response;
         }
 
-        if ($exception instanceof CatalogWriteContentionException) {
+        if (
+            $exception instanceof CatalogWriteContentionException
+            || $exception instanceof OrderLifecycleContentionException
+            || $exception instanceof OrderActivityContentionException
+            || $exception instanceof OrderWriteContentionException
+        ) {
+            $orderContention = ! $exception instanceof CatalogWriteContentionException;
+            $messageKey = match (true) {
+                $exception instanceof OrderActivityContentionException => 'api.orders.activity_write_contention',
+                $exception instanceof OrderLifecycleContentionException => 'api.orders.write_contention',
+                $exception instanceof OrderWriteContentionException => 'api.orders.crud_write_contention',
+                default => 'api.errors.write_contention',
+            };
+
             return $this->apiResponse->error(
-                message: Lang::string('api.errors.write_contention'),
+                message: Lang::string($messageKey),
                 code: ApiErrorCode::WRITE_CONTENTION,
                 status: Response::HTTP_SERVICE_UNAVAILABLE,
                 headers: [
                     ...$this->forwardedHeaders($response),
-                    'retry-after' => Config::integer('catalog.retry_after_seconds'),
+                    'retry-after' => Config::integer($orderContention ? 'orders.retry_after_seconds' : 'catalog.retry_after_seconds'),
                     'x-request-id' => $exception->requestId,
                 ],
                 meta: ['request_id' => $exception->requestId],
@@ -60,6 +78,8 @@ final readonly class ApiExceptionRenderer
             $exception instanceof InvalidCredentialsException,
             $exception instanceof AuthenticationException => Response::HTTP_UNAUTHORIZED,
             $exception instanceof LastActiveAdminException,
+            $exception instanceof OrderIdempotencyConflictException,
+            $exception instanceof OrderVersionConflictException,
             $exception instanceof StockVersionConflictException => Response::HTTP_CONFLICT,
             $exception instanceof ValidationException && ! $response->isClientError() => Response::HTTP_UNPROCESSABLE_ENTITY,
             default => $response->getStatusCode(),
@@ -77,6 +97,14 @@ final readonly class ApiExceptionRenderer
             $exception instanceof LastActiveAdminException => [
                 ApiErrorCode::LAST_ACTIVE_ADMIN,
                 'api.users.last_active_admin',
+            ],
+            $exception instanceof OrderIdempotencyConflictException => [
+                ApiErrorCode::ORDER_IDEMPOTENCY_CONFLICT,
+                'api.orders.idempotency_conflict',
+            ],
+            $exception instanceof OrderVersionConflictException => [
+                ApiErrorCode::ORDER_VERSION_CONFLICT,
+                'api.orders.version_conflict',
             ],
             $exception instanceof StockVersionConflictException,
             $exception instanceof ValidationException => [
@@ -97,6 +125,9 @@ final readonly class ApiExceptionRenderer
             code: $code,
             status: $status,
             fields: match (true) {
+                $exception instanceof OrderVersionConflictException => [
+                    'expected_version' => [Lang::string('api.orders.version_conflict')],
+                ],
                 $exception instanceof StockVersionConflictException => [
                     'expected_stock_version' => [Lang::string('api.products.stock_version_conflict')],
                 ],
@@ -104,9 +135,11 @@ final readonly class ApiExceptionRenderer
                 default => [],
             },
             headers: $headers,
-            meta: $exception instanceof StockVersionConflictException
-                ? ['stock_version' => $exception->currentStockVersion]
-                : null,
+            meta: match (true) {
+                $exception instanceof StockVersionConflictException => ['stock_version' => $exception->currentStockVersion],
+                $exception instanceof OrderVersionConflictException => ['version' => $exception->currentVersion],
+                default => null,
+            },
         );
     }
 
