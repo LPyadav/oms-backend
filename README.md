@@ -493,9 +493,13 @@ these windows.
 | `2025-01-01` | `2025-06-30` | 181 |
 
 Start at `page=1` for each window, keep `per_page` fixed, and retrieve
-pages through `meta.last_page`. For a newest-first export, process the
-windows from newest to oldest and keep the order returned within each
-page.
+pages through `meta.last_page`.
+
+For a newest-first export, concatenate Order & Fulfillment windows from
+newest to oldest and keep the row order within each window. For Sales &
+Tax, combine rows from all windows and sort globally by
+`completed_at DESC`, then `id DESC`. Completion timestamps from adjacent
+local-date windows can interleave when clocks roll back across midnight.
 
 Use `data.totals` once per window. Each page includes totals for the
 entire filtered window. Sum `order_count` across windows and combine

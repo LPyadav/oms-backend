@@ -4,7 +4,7 @@ info:
   title: OMS Backend API
   version: '0.1.0'
   description: |
-    Order Management System health, authentication, access administration, customer management, product catalog, order, and notification endpoints.
+    Order Management System health, authentication, access administration, customer management, product catalog, order, notification, dashboard, and report endpoints.
 
     All registered API routes share a default limit of 120 requests per
     minute per client IP. Requests rejected for missing or invalid
