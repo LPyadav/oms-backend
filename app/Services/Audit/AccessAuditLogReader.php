@@ -16,6 +16,7 @@ final class AccessAuditLogReader
     public function paginate(array $filters, int $perPage, int $page): LengthAwarePaginator
     {
         return AccessAuditLog::query()
+            ->with('actor:id,email')
             ->where($filters)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -24,6 +25,6 @@ final class AccessAuditLogReader
 
     public function find(string $id): AccessAuditLog
     {
-        return AccessAuditLog::query()->findOrFail($id);
+        return AccessAuditLog::query()->with('actor:id,email')->findOrFail($id);
     }
 }

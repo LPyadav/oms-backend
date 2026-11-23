@@ -3333,11 +3333,15 @@ components:
 
     AuditLog:
       type: object
-      required: [id, actor_id, target_type, target_id, action, created_at]
+      required: [id, actor_id, actor_email, target_type, target_id, action, created_at]
       properties:
         id: { type: integer, minimum: 1 }
         actor_id: { type: integer, minimum: 1 }
         actor_name: { type: [string, 'null'] }
+        actor_email:
+          type: [string, 'null']
+          format: email
+          description: Current actor email, or null when the actor account is unavailable.
         target_type: { type: string, enum: [user, role, order, customer, product] }
         target_id: { type: integer, minimum: 1 }
         action: { type: string }

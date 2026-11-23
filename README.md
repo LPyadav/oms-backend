@@ -566,6 +566,11 @@ and the shared response schemas.
 | GET | /api/admin/audit-logs/{log} | Reads the event's permitted before and after values, including retained history for deleted orders. |
 | PATCH | /api/me/password | Checks the old password and revokes every bearer token after a successful change. |
 
+Both audit list and detail responses include `actor_email` from the actor's
+current account, or `null` if the account is unavailable. `actor_id` remains
+the identifier used by audit filters. The actor field is separate from
+the permitted before and after values.
+
 Both audit lists have a default page size of 25 and a default maximum of 100.
 Configure the access audit list with `PAGINATION_ACCESS_AUDIT_LOGS_DEFAULT_PER_PAGE`
 and `PAGINATION_ACCESS_AUDIT_LOGS_MAX_PER_PAGE`. Configure the operational list

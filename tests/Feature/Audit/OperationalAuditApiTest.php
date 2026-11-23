@@ -70,6 +70,7 @@ final class OperationalAuditApiTest extends TestCase
             ->assertJsonCount(1, 'data.logs')
             ->assertJsonPath('data.logs.0.id', $latest->id)
             ->assertJsonPath('data.logs.0.actor_name', $admin->name)
+            ->assertJsonPath('data.logs.0.actor_email', $admin->email)
             ->assertJsonMissingPath('data.logs.0.before_values')
             ->assertJsonMissingPath('data.logs.0.after_values')
             ->assertJsonPath('meta.total', 2)
@@ -87,6 +88,7 @@ final class OperationalAuditApiTest extends TestCase
 
         $this->getJson(self::ENDPOINT.'/'.$latest->id)
             ->assertOk()
+            ->assertJsonPath('data.log.actor_email', $admin->email)
             ->assertJsonPath('data.log.before_values.name', 'Previous name')
             ->assertJsonPath('data.log.after_values.name', 'New name')
             ->assertJsonPath('data.log.before_values.email', '[redacted]')
@@ -99,6 +101,27 @@ final class OperationalAuditApiTest extends TestCase
         $this->getJson(self::ENDPOINT.'?date_from=2026-11-23&date_to=2026-11-22&per_page=101&target_type=role')
             ->assertUnprocessable()
             ->assertJsonStructure(['errors' => ['fields' => ['date_to', 'per_page', 'target_type']]]);
+    }
+
+    public function test_operational_audit_keeps_the_log_when_its_actor_is_deleted(): void
+    {
+        $this->authenticate(User::factory()->create()->assignRole('admin'));
+        $actor = User::factory()->create();
+        $log = $this->log($actor, 'customer', '2026-11-23 09:00:00');
+        $actor->delete();
+
+        $this->getJson(self::ENDPOINT.'?actor_id='.$actor->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'data.logs')
+            ->assertJsonStructure(['data' => ['logs' => [0 => ['actor_email']]]])
+            ->assertJsonPath('data.logs.0.actor_id', $actor->id)
+            ->assertJsonPath('data.logs.0.actor_email', null);
+
+        $this->getJson(self::ENDPOINT.'/'.$log->id)
+            ->assertOk()
+            ->assertJsonStructure(['data' => ['log' => ['actor_email']]])
+            ->assertJsonPath('data.log.actor_id', $actor->id)
+            ->assertJsonPath('data.log.actor_email', null);
     }
 
     public function test_stock_adjustment_records_before_and_after_once_and_hides_the_reason(): void

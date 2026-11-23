@@ -54,6 +54,7 @@ final class AccessAuditLogTest extends TestCase
             ->assertJsonPath('meta.last_page', 2)
             ->assertJsonPath('data.logs.0.id', $clear->id)
             ->assertJsonPath('data.logs.0.actor_id', $admin->id)
+            ->assertJsonPath('data.logs.0.actor_email', $admin->email)
             ->assertJsonPath('data.logs.0.target_type', 'user')
             ->assertJsonPath('data.logs.0.target_id', $staff->id)
             ->assertJsonPath('data.logs.0.action', 'user.permissions.replaced')
@@ -70,6 +71,7 @@ final class AccessAuditLogTest extends TestCase
         $this->getJson(self::ENDPOINT.'/'.$clear->id)
             ->assertOk()
             ->assertJsonPath('data.log.id', $clear->id)
+            ->assertJsonPath('data.log.actor_email', $admin->email)
             ->assertJsonPath('data.log.before_values.direct_permissions', ['products.view'])
             ->assertJsonPath('data.log.after_values.direct_permissions', []);
 
@@ -80,6 +82,35 @@ final class AccessAuditLogTest extends TestCase
             ->assertJsonPath('data.logs.0.after_values.name', 'Review helper');
 
         $this->getJson(self::ENDPOINT.'/'.($clear->id + 100))->assertNotFound();
+    }
+
+    public function test_access_audit_keeps_the_log_when_its_actor_is_deleted(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $actor = User::factory()->create();
+        $log = AccessAuditLog::query()->create([
+            'actor_id' => $actor->id,
+            'target_type' => 'role',
+            'target_id' => 42,
+            'action' => 'role.created',
+            'before_values' => null,
+            'after_values' => ['name' => 'Review helper'],
+        ]);
+        $actor->delete();
+        $this->withToken($admin->createToken('Audit test')->plainTextToken);
+
+        $this->getJson(self::ENDPOINT.'?actor_id='.$actor->id)
+            ->assertOk()
+            ->assertJsonCount(1, 'data.logs')
+            ->assertJsonStructure(['data' => ['logs' => [0 => ['actor_email']]]])
+            ->assertJsonPath('data.logs.0.actor_id', $actor->id)
+            ->assertJsonPath('data.logs.0.actor_email', null);
+
+        $this->getJson(self::ENDPOINT.'/'.$log->id)
+            ->assertOk()
+            ->assertJsonStructure(['data' => ['log' => ['actor_email']]])
+            ->assertJsonPath('data.log.actor_id', $actor->id)
+            ->assertJsonPath('data.log.actor_email', null);
     }
 
     public function test_audit_reads_deny_guests_and_non_admins_even_with_the_audit_grant(): void

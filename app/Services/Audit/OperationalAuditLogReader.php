@@ -47,6 +47,6 @@ final class OperationalAuditLogReader
     {
         return AuditLog::query()
             ->whereIn('target_type', AuditLog::OPERATIONAL_TARGETS)
-            ->with('actor:id,name');
+            ->with('actor:id,name,email');
     }
 }
