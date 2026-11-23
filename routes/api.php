@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Customers\CustomerController;
+use App\Http\Controllers\Notifications\OrderNotificationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Roles\AdminRoleController;
@@ -46,6 +47,15 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::patch('/{customer}/deactivate', [CustomerController::class, 'deactivate'])
             ->whereNumber('customer')
             ->name('deactivate');
+    });
+
+    Route::prefix('notifications')->name('notifications.')->group(static function (): void {
+        Route::get('/', [OrderNotificationController::class, 'index'])->name('index');
+        Route::get('/unread-count', [OrderNotificationController::class, 'unreadCount'])->name('unread-count');
+        Route::patch('/read-all', [OrderNotificationController::class, 'markAllRead'])->name('read-all');
+        Route::patch('/{notification}/read', [OrderNotificationController::class, 'markRead'])
+            ->whereNumber('notification')
+            ->name('read');
     });
 
     Route::prefix('orders')->name('orders.')->group(static function (): void {

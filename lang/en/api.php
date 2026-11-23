@@ -63,6 +63,13 @@ return [
         'catalog_currency_changed' => 'New products cannot be added because this order uses a different currency from the current catalog.',
     ],
 
+    'notifications' => [
+        'list_retrieved' => 'Notifications retrieved successfully.',
+        'unread_count_retrieved' => 'Unread notification count retrieved successfully.',
+        'marked_read' => 'Notification marked as read.',
+        'marked_all_read' => 'Visible notifications marked as read.',
+    ],
+
     'customers' => [
         'list_retrieved' => 'Customers retrieved successfully.',
         'retrieved' => 'Customer retrieved successfully.',
