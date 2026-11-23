@@ -363,6 +363,33 @@ count. Set `DASHBOARD_REVENUE_DEFAULT_DAYS` and
 `DASHBOARD_REVENUE_MAX_DAYS` to configure the date window. The maximum
 is capped at 366 days.
 
+### Order and fulfillment report
+
+Send `GET /api/reports/orders` with a Sanctum Bearer token that has
+`reports.view` and `orders.view.any`. Admins and Managers have both
+grants by default. Each row includes the order number, business order date,
+priority, status, customer and assignee ID and name, currency, and stored
+total. Use the row's ID with `GET /api/orders/{order}` for details.
+
+Pass `date_from` and `date_to` together in `YYYY-MM-DD` format. Both
+endpoints of that range are inclusive for `order_date`. An omitted pair
+defaults to the last 30 calendar days, including today in
+`DASHBOARD_TIMEZONE`. Skipped local dates still count toward the span.
+Optional filters are `status`, `customer_id`, and `assignee_id`. Rows sort
+by order date descending, then by ID descending.
+Use `page` and `per_page` for pagination. The default page size is 25.
+
+Totals cover every order matching the filters, including cancelled orders
+when they match. Amounts are grouped by stored currency. Each aggregate
+`grand_total_minor` is a decimal integer string so clients can preserve
+precision for large totals. MySQL uses a repeatable-read transaction so
+each page and its totals share the same snapshot. The response includes
+`meta.snapshot_at` in UTC. Each page request starts its own snapshot.
+
+Set `REPORTS_DEFAULT_DAYS` and `REPORTS_MAX_DAYS` to configure the date
+window, up to 366 days. Set `PAGINATION_REPORTS_DEFAULT_PER_PAGE` and
+`PAGINATION_REPORTS_MAX_PER_PAGE` to configure page sizes up to 100.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |

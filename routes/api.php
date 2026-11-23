@@ -7,6 +7,7 @@ use App\Http\Controllers\Customers\CustomerController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Products\ProductController;
+use App\Http\Controllers\Reports\ReportController;
 use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
@@ -35,6 +36,9 @@ Route::middleware('auth:sanctum')->group(static function (): void {
     Route::get('/dashboard', [DashboardController::class, 'show'])->name('dashboard.show');
     Route::get('/dashboard/revenue-trend', [DashboardController::class, 'revenueTrend'])
         ->name('dashboard.revenue-trend');
+
+    Route::get('/reports/orders', [ReportController::class, 'orderFulfillment'])
+        ->name('reports.orders');
 
     Route::prefix('customers')->name('customers.')->group(static function (): void {
         Route::get('/', [CustomerController::class, 'index'])->name('index');

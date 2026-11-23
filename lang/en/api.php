@@ -27,6 +27,11 @@ return [
         'revenue_range_exceeded' => 'The revenue date range may span at most :days days.',
     ],
 
+    'reports' => [
+        'order_fulfillment_retrieved' => 'Order fulfillment report retrieved.',
+        'date_range_exceeded' => 'The report date range may span at most :days days.',
+    ],
+
     'orders' => [
         'assigned' => 'Order assignment updated successfully.',
         'assignees_retrieved' => 'Assignable employees retrieved successfully.',

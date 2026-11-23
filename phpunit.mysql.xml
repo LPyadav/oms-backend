@@ -28,6 +28,8 @@
             <file>tests/Feature/Products/CatalogWriteConcurrencyTest.php</file>
             <file>tests/Feature/Products/ProductInventoryTest.php</file>
             <file>tests/Feature/Products/ProductManagementTest.php</file>
+            <file>tests/Feature/Reports/OrderFulfillmentReportTest.php</file>
+            <file>tests/Feature/Reports/OrderFulfillmentSnapshotTest.php</file>
             <file>tests/Feature/Roles/AdminRoleManagementTest.php</file>
             <file>tests/Feature/Roles/RolesAndPermissionsSeederTest.php</file>
             <file>tests/Feature/Users/AdminUserManagementTest.php</file>

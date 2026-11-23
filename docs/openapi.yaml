@@ -4,7 +4,7 @@ info:
   title: OMS Backend API
   version: '0.1.0'
   description: |
-    Order Management System health, authentication, access administration, customer management, product catalog, order, and dashboard endpoints.
+    Order Management System health, authentication, access administration, customer management, product catalog, order, dashboard, and report endpoints.
 
     All registered API routes share a default limit of 120 requests per
     minute per client IP. Requests rejected for missing or invalid
@@ -1378,6 +1378,75 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
 
+  /api/reports/orders:
+    get:
+      tags: [Reports]
+      operationId: getOrderFulfillmentReport
+      summary: Get the Order and Fulfillment report
+      description: >-
+        Requires an active account with reports.view and orders.view.any.
+        Filter by the stored business order date, status, customer, or
+        assignee. Results exclude soft-deleted orders and include every
+        matching status, including cancelled orders when matched. Rows use
+        order date descending, then order ID descending. The rows, pagination
+        total, and amounts for all matching orders are evaluated in the same
+        database read snapshot. Use a row ID with GET /api/orders/{order} for
+        order details.
+      parameters:
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+          description: >-
+            Inclusive start of the business order-date range. Supply both
+            date_from and date_to or omit both. The default range contains
+            the last 30 calendar days in the reporting timezone, including today.
+            Skipped local dates still count toward the span.
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+          description: >-
+            Inclusive end of the business order-date range. The default
+            maximum span is 366 calendar days.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, pending, confirmed, processing, ready, completed, cancelled]
+          description: Filter by current order status.
+        - name: customer_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: Filter by the customer ID stored on the order.
+        - name: assignee_id
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: Filter by the current assignee ID.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: One-based page number.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+          description: Requested page size. Deployment configuration can set lower limits.
+      responses:
+        '200':
+          description: Matching order rows, all-filter totals by currency, and snapshot metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderFulfillmentReportResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/products:
     get:
       tags: [Products]
@@ -2562,6 +2631,92 @@ components:
           minimum: 0
           description: Stock version from the current product response.
         reason: { type: string, minLength: 1, maxLength: 255, pattern: '\S' }
+
+    ReportOrderLabel:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string }
+
+    OrderFulfillmentReportRow:
+      type: object
+      additionalProperties: false
+      required: [id, order_number, order_date, customer, priority, status, assignee, currency, grand_total_minor]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: Use this ID to open the existing order details endpoint.
+        order_number: { type: string }
+        order_date: { type: string, format: date }
+        customer: { $ref: '#/components/schemas/ReportOrderLabel' }
+        priority: { type: string, enum: [low, normal, high, urgent] }
+        status: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] }
+        assignee:
+          oneOf:
+            - $ref: '#/components/schemas/ReportOrderLabel'
+            - type: 'null'
+        currency: { type: string, pattern: '^[A-Z]{3}$', example: USD }
+        grand_total_minor:
+          type: integer
+          minimum: 0
+          description: The stored order total in the smallest unit of its currency.
+
+    OrderFulfillmentReportCurrencyTotal:
+      type: object
+      additionalProperties: false
+      required: [currency, order_count, grand_total_minor]
+      properties:
+        currency: { type: string, pattern: '^[A-Z]{3}$', example: USD }
+        order_count: { type: integer, minimum: 1 }
+        grand_total_minor:
+          type: string
+          pattern: '^[0-9]+$'
+          description: Exact sum of stored order totals in this currency, expressed as a base-10 integer string.
+          example: '18014398509481982'
+
+    OrderFulfillmentReportResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          required: [data, meta]
+          properties:
+            data:
+              type: object
+              required: [orders, totals]
+              properties:
+                orders:
+                  type: array
+                  items: { $ref: '#/components/schemas/OrderFulfillmentReportRow' }
+                totals:
+                  type: object
+                  required: [order_count, by_currency]
+                  properties:
+                    order_count:
+                      type: integer
+                      minimum: 0
+                      description: Number of matching orders across all pages.
+                    by_currency:
+                      type: array
+                      description: Totals across all filtered rows, sorted by currency code. An empty result is an empty list.
+                      items: { $ref: '#/components/schemas/OrderFulfillmentReportCurrencyTotal' }
+            meta:
+              type: object
+              additionalProperties: false
+              required: [current_page, per_page, total, last_page, snapshot_at, date_from, date_to]
+              properties:
+                current_page: { type: integer, minimum: 1 }
+                per_page: { type: integer, minimum: 1 }
+                total: { type: integer, minimum: 0 }
+                last_page: { type: integer, minimum: 1 }
+                snapshot_at:
+                  type: string
+                  format: date-time
+                  description: UTC timestamp of this response's report snapshot. Each page request opens its own snapshot.
+                date_from: { type: string, format: date }
+                date_to: { type: string, format: date }
 
     Product:
       type: object
