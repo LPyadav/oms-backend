@@ -569,13 +569,18 @@ with `PAGINATION_OPERATIONAL_AUDIT_LOGS_DEFAULT_PER_PAGE` and
 ### Authentication trade-off
 
 The original plan specified Sanctum session cookies and CSRF protection
-for the Vue app. This PR uses Sanctum Bearer tokens so the Vue app and
-future mobile clients can share the same login, logout, and user APIs.
+for the Vue app. The API uses expiring Sanctum bearer tokens so Vue and
+other clients can share the same login, logout, and user APIs.
 
-The proposed Vue implementation will hold the access token in memory.
-A full page reload requires signing in again. If a protected request
-returns `401`, Vue will clear the token, send the user to the login
-screen, and return them to the previous page after successful login.
+Vue stores the token in browser `sessionStorage`. After a reload in the
+same tab, Vue calls `GET /api/me` to validate the token and restore the
+user and effective permissions. An expired token or a `401` from a
+protected request clears the session. After signing in again, Vue can
+return the user to a valid internal route, subject to its access checks.
+
+JavaScript on the same origin can read the stored token. An XSS flaw
+could expose it until expiry or revocation. Use HTTPS in production to
+protect the token in transit.
 
 ## Verify the authentication flow
 
@@ -675,6 +680,9 @@ php tests/run-mysql.php
 ```
 
 ## Technical notes
+
+See the [assessment technical notes](docs/technical-notes.md) for design
+decisions, verification evidence, and future improvements.
 
 - Laravel controllers return an API envelope. Form Requests validate input,
   policies and scoped queries authorize reads and writes, and services own
