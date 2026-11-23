@@ -125,6 +125,25 @@ code `WRITE_CONTENTION` and a request ID in both `X-Request-ID` and
 `CATALOG_WRITE_RETRY_AFTER_SECONDS`, which defaults to one second and accepts
 values from 1 to 60.
 
+### Assessment demo dataset
+
+Use a fresh local MySQL database. These commands create five review accounts
+across Admin, Manager and Staff, plus 100 customers, 50 products, and 504 orders
+with mixed statuses, priorities, taxes, discounts, assignment, notes and
+history. The seeder uses the domain services so stock and audit records follow
+the same rules as interactive orders. The demo account command prints generated
+passwords in your own terminal for newly created accounts.
+
+```powershell
+php artisan migrate
+php artisan oms:create-demo-users --extended
+php artisan db:seed --class=AssessmentDemoSeeder
+php artisan serve --host=127.0.0.1 --port=8000
+```
+
+Run `php artisan queue:work --queue=notifications,default` and
+`php artisan schedule:work` in separate terminals for notification delivery.
+
 ## API endpoints
 
 Successful and failed JSON responses use the same envelope with `success`,
@@ -528,6 +547,25 @@ Adding a new one returns `422`.
 The [OpenAPI contract](docs/openapi.yaml) describes request bodies, pagination,
 and the shared response schemas.
 
+### Customer summary, audit and account maintenance
+
+| Method | Endpoint | Access and behavior |
+| --- | --- | --- |
+| GET | /api/admin/users/{user} | Active Admin with user-management access. Returns the profile consumed by Manage. |
+| GET | /api/admin/users | Supports name/email search, active status, exact role and pagination. |
+| GET | /api/customers/{customer}/order-summary | Existing customer visibility plus order-view access. Returns visible order counts, exact lifetime values per currency, and five most recent visible orders. |
+| GET | /api/admin/access-audit-logs | Active Admin with audit.view. Paged user/role events, with action, actor and target filters. |
+| GET | /api/admin/access-audit-logs/{log} | Reads user/role changes, including direct-permission additions or clears. |
+| GET | /api/admin/audit-logs | Active Admin with audit.view. Paged order/customer/product events, with action, actor, target and UTC date filters. |
+| GET | /api/admin/audit-logs/{log} | Reads the event's permitted before and after values, including retained history for deleted orders. |
+| PATCH | /api/me/password | Checks the old password and revokes every bearer token after a successful change. |
+
+Both audit lists have a default page size of 25 and a default maximum of 100.
+Configure the access audit list with `PAGINATION_ACCESS_AUDIT_LOGS_DEFAULT_PER_PAGE`
+and `PAGINATION_ACCESS_AUDIT_LOGS_MAX_PER_PAGE`. Configure the operational list
+with `PAGINATION_OPERATIONAL_AUDIT_LOGS_DEFAULT_PER_PAGE` and
+`PAGINATION_OPERATIONAL_AUDIT_LOGS_MAX_PER_PAGE`.
+
 ### Authentication trade-off
 
 The original plan specified Sanctum session cookies and CSRF protection
@@ -599,12 +637,15 @@ the same health response through the Vite proxy.
 | `RATE_LIMIT_API_PER_IP` | 120 per minute | Shared IP quota across registered API routes |
 | `RATE_LIMIT_LOGIN_PER_IP` | 30 per minute | Additional login quota for the client IP |
 | `RATE_LIMIT_LOGIN_PER_EMAIL` | 5 per minute | Additional login quota for the normalized email, across IPs |
+| `RATE_LIMIT_PASSWORD_CHANGE_PER_ACCOUNT` | 6 requests | Additional password change quota for each authenticated account |
+| `RATE_LIMIT_PASSWORD_CHANGE_WINDOW_MINUTES` | 1 minute | Window for the account password change quota |
 
-Login checks all applicable quotas before password verification. Limiter keys
-use HMAC-SHA-256 with `APP_KEY` for IP and email identifiers. Multiple API
-instances must use the same `APP_KEY` and a shared limiter cache. Behind a
-reverse proxy, configure trusted proxies so Laravel resolves the correct client
-IP.
+Login checks all applicable quotas before password verification. Password
+changes add an authenticated account quota to the shared API IP limit.
+Limiter keys use HMAC-SHA-256 with `APP_KEY` for IP, email, and account
+identifiers. Multiple API instances must use the same `APP_KEY` and a shared
+limiter cache. Behind a reverse proxy, configure trusted proxies so Laravel
+resolves the correct client IP.
 
 ## Development checks
 
@@ -632,3 +673,27 @@ to a positive whole number of seconds in the shell to override it.
 $env:OMS_MYSQL_TIMEOUT_SECONDS = '900'
 php tests/run-mysql.php
 ```
+
+## Technical notes
+
+- Laravel controllers return an API envelope. Form Requests validate input,
+  policies and scoped queries authorize reads and writes, and services own
+  transactions, financial calculations, and inventory.
+- Pricing uses stored item snapshots in integer minor units. Order-level
+  discounts are allocated before line tax. Confirmation reserves stock in
+  the same transaction as status/history; an eligible cancellation reverses
+  it once. Idempotency keys protect retries and versions protect stale writes.
+- Access and operational audit have separate read endpoints guarded by the
+  active Admin and audit grant. Operational responses allowlist snapshots
+  and redact contact values. The data remains available after soft deletion.
+- Reports keep totals grouped by currency and use separate order-date and
+  completion-date semantics. Each report response has a database snapshot.
+  Numbered deep pages and text search are bounded; revisit measured slow paths
+  before adding new indexing or aggregation strategies.
+- Codex assisted with assessment traceability, code and test drafts, API
+  integration, and documentation. The owner reviewed implementation patches
+  and controlled commits and PRs. The reviewer demo should trace one order
+  from pricing through assignment, confirmation, stock, and notification.
+- Record exact compatible backend/frontend commits, dependency and secret
+  scan results, MySQL contention evidence, and the three-role browser demo
+  with release sign-off.

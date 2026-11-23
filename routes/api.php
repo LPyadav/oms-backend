@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Audit\AccessAuditLogController;
+use App\Http\Controllers\Audit\OperationalAuditController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Customers\CustomerController;
 use App\Http\Controllers\Dashboard\DashboardController;
@@ -31,6 +33,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
     Route::post('/logout', [AuthController::class, 'logout'])
         ->name('auth.logout');
 
+    Route::patch('/me/password', [AuthController::class, 'changePassword'])
+        ->middleware('throttle:password-change')
+        ->name('auth.password.update');
+
     Route::get('/me', [AuthController::class, 'me'])
         ->name('auth.me');
 
@@ -50,6 +56,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::get('/{customer}', [CustomerController::class, 'show'])
             ->whereNumber('customer')
             ->name('show');
+
+        Route::get('/{customer}/order-summary', [CustomerController::class, 'orderSummary'])
+            ->whereNumber('customer')
+            ->name('order-summary');
 
         Route::patch('/{customer}', [CustomerController::class, 'update'])
             ->whereNumber('customer')
@@ -129,6 +139,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::post('/', [AdminUserController::class, 'store'])
             ->name('store');
 
+        Route::get('/{user}', [AdminUserController::class, 'show'])
+            ->whereNumber('user')
+            ->name('show');
+
         Route::patch('/{user}', [AdminUserController::class, 'update'])
             ->whereNumber('user')
             ->name('update');
@@ -168,6 +182,20 @@ Route::middleware('auth:sanctum')->group(static function (): void {
         Route::patch('/{role}/permissions', [AdminRoleController::class, 'assignPermissions'])
             ->whereNumber('role')
             ->name('permissions.update');
+    });
+
+    Route::prefix('admin/access-audit-logs')->name('admin.access-audit-logs.')->group(static function (): void {
+        Route::get('/', [AccessAuditLogController::class, 'index'])->name('index');
+        Route::get('/{accessAuditLog}', [AccessAuditLogController::class, 'show'])
+            ->whereNumber('accessAuditLog')
+            ->name('show');
+    });
+
+    Route::prefix('admin/audit-logs')->name('admin.audit-logs.')->group(static function (): void {
+        Route::get('/', [OperationalAuditController::class, 'index'])->name('index');
+        Route::get('/{auditLog}', [OperationalAuditController::class, 'show'])
+            ->whereNumber('auditLog')
+            ->name('show');
     });
 
     Route::get('/admin/permissions', [AdminRoleController::class, 'permissions'])

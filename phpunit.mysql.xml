@@ -9,8 +9,12 @@
 >
     <testsuites>
         <testsuite name="MySQL regressions">
+            <file>tests/Feature/Audit/AccessAuditLogTest.php</file>
+            <file>tests/Feature/Audit/OperationalAuditApiTest.php</file>
+            <file>tests/Feature/Auth/ChangePasswordTest.php</file>
             <file>tests/Feature/Auth/LoginTest.php</file>
             <file>tests/Feature/Customers/CustomerManagementTest.php</file>
+            <file>tests/Feature/Customers/CustomerOrderSummaryTest.php</file>
             <file>tests/Feature/Dashboard/DashboardTest.php</file>
             <file>tests/Feature/Notifications/OrderNotificationApiTest.php</file>
             <file>tests/Feature/Notifications/OrderNotificationConcurrencyTest.php</file>
@@ -37,6 +41,7 @@
             <file>tests/Feature/Reports/SalesTaxSnapshotTest.php</file>
             <file>tests/Feature/Roles/AdminRoleManagementTest.php</file>
             <file>tests/Feature/Roles/RolesAndPermissionsSeederTest.php</file>
+            <file>tests/Feature/Users/AdminUserDirectoryTest.php</file>
             <file>tests/Feature/Users/AdminUserManagementTest.php</file>
             <file>tests/Feature/Users/AdminUserStatusTest.php</file>
             <file>tests/Feature/Users/ConcurrentUserDisableTest.php</file>

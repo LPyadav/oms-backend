@@ -190,7 +190,13 @@ final class OrderLifecycleTest extends TestCase
         ]);
         $this->assertDatabaseCount('stock_movements', 3);
         $this->assertDatabaseCount('order_status_histories', 2);
-        $this->assertDatabaseCount('audit_logs', 2);
+        $this->assertDatabaseHas('audit_logs', [
+            'actor_id' => $admin->id,
+            'target_type' => 'product',
+            'target_id' => $product->id,
+            'action' => 'product.stock_adjusted',
+        ]);
+        $this->assertDatabaseCount('audit_logs', 3);
     }
 
     public function test_cancelling_a_draft_or_pending_order_leaves_stock_unchanged(): void

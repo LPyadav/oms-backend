@@ -21,6 +21,7 @@ use App\Services\Users\UserStatusService;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 final class AdminUserController extends Controller
 {
@@ -34,9 +35,19 @@ final class AdminUserController extends Controller
         $users = $this->userManagementService->paginate(
             perPage: $request->perPage(),
             page: $request->page(),
+            search: $request->search(),
+            isActive: $request->isActive(),
+            role: $request->role(),
         );
 
         return $this->adminUserResponse->list($users, $request);
+    }
+
+    public function show(Request $request, string $user): JsonResponse
+    {
+        Gate::authorize('viewAny', User::class);
+
+        return $this->adminUserResponse->show($this->userManagementService->find($user), $request);
     }
 
     public function store(StoreUserRequest $request): JsonResponse

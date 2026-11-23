@@ -6,6 +6,8 @@ return [
     'auth' => [
         'logged_in' => 'Logged in successfully.',
         'logged_out' => 'Logged out successfully.',
+        'password_changed' => 'Password changed successfully.',
+        'password_unchanged' => 'The replacement password must be different from your current password.',
         'current_user_retrieved' => 'Authenticated user retrieved.',
         'invalid_credentials' => 'The email or password is incorrect.',
         'unauthenticated' => 'Authentication is required.',
@@ -13,12 +15,18 @@ return [
 
     'users' => [
         'list_retrieved' => 'Users retrieved successfully.',
+        'retrieved' => 'User retrieved successfully.',
         'created' => 'User created successfully.',
         'updated' => 'User updated successfully.',
         'enabled' => 'User enabled successfully.',
         'last_active_admin' => 'At least one active Admin must remain.',
         'permissions_retrieved' => 'User permissions retrieved successfully.',
         'permissions_updated' => 'Direct user permissions updated successfully.',
+    ],
+
+    'access_audit' => [
+        'list_retrieved' => 'Access audit records retrieved successfully.',
+        'retrieved' => 'Access audit record retrieved successfully.',
     ],
 
     'dashboard' => [
@@ -31,6 +39,11 @@ return [
         'order_fulfillment_retrieved' => 'Order fulfillment report retrieved.',
         'sales_tax_retrieved' => 'Sales and tax report retrieved.',
         'date_range_exceeded' => 'The report date range may span at most :days days.',
+    ],
+
+    'operational_audit' => [
+        'list_retrieved' => 'Operational audit records retrieved successfully.',
+        'retrieved' => 'Operational audit record retrieved successfully.',
     ],
 
     'orders' => [
@@ -85,6 +98,7 @@ return [
     'customers' => [
         'list_retrieved' => 'Customers retrieved successfully.',
         'retrieved' => 'Customer retrieved successfully.',
+        'order_summary_retrieved' => 'Customer order summary retrieved successfully.',
         'created' => 'Customer created successfully.',
         'updated' => 'Customer updated successfully.',
         'deactivated' => 'Customer deactivated successfully.',

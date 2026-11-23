@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Policies\ProductPolicy;
+use App\Services\Audit\AuditLogWriter;
 use App\Services\Catalog\CatalogWriteTransaction;
 use App\Services\Users\AdminUserWriteLock;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -29,6 +30,7 @@ final readonly class InventoryService
         private ProductPolicy $productPolicy,
         private AdminUserWriteLock $writeLock,
         private CatalogWriteTransaction $writeTransaction,
+        private AuditLogWriter $auditLogWriter,
     ) {}
 
     public function adjust(
@@ -57,13 +59,26 @@ final readonly class InventoryService
                 return $product;
             }
 
-            return $this->recordMovement(
+            $stockFields = ['stock_quantity', 'stock_version'];
+            $before = $product->only($stockFields);
+            $adjusted = $this->recordMovement(
                 $product,
                 $stockQuantity,
                 $reason,
                 StockMovement::TYPE_ADJUSTMENT,
                 $lockedActor,
             );
+
+            $this->auditLogWriter->record(
+                $lockedActor,
+                $adjusted,
+                'product',
+                'product.stock_adjusted',
+                $before,
+                $adjusted->only($stockFields),
+            );
+
+            return $adjusted;
         });
     }
 

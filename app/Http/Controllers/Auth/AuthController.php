@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Responses\Auth\AuthenticationResponse;
 use App\Models\User;
@@ -36,6 +37,20 @@ final class AuthController extends Controller
         $authenticationService->logout($this->authenticatedUser($request));
 
         return $authenticationResponse->logout();
+    }
+
+    public function changePassword(
+        ChangePasswordRequest $request,
+        AuthenticationService $authenticationService,
+        AuthenticationResponse $authenticationResponse,
+    ): JsonResponse {
+        $authenticationService->changePassword(
+            $this->authenticatedUser($request),
+            $request->currentPassword(),
+            $request->newPassword(),
+        );
+
+        return $authenticationResponse->passwordChanged();
     }
 
     public function me(

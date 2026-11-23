@@ -28,6 +28,8 @@ final class AuditLog extends Model
 {
     public const UPDATED_AT = null;
 
+    public const array OPERATIONAL_TARGETS = ['order', 'customer', 'product'];
+
     /**
      * @return BelongsTo<User, $this>
      */

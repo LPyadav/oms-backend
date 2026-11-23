@@ -16,7 +16,8 @@ use Spatie\Permission\Models\Role;
 final class CreateDemoUsersCommand extends Command
 {
     protected $signature = 'oms:create-demo-users
-        {--assign-existing : Assign roles to existing demo users who have no role}';
+        {--assign-existing : Assign roles to existing demo users who have no role}
+        {--extended : Include two more accounts for the assessment scenario}';
 
     protected $description = 'Create local OMS demo users and assign their default roles';
 
@@ -29,10 +30,14 @@ final class CreateDemoUsersCommand extends Command
         }
 
         $accounts = [
-            'admin' => ['name' => 'OMS Admin', 'email' => 'admin@oms.test'],
-            'manager' => ['name' => 'OMS Manager', 'email' => 'manager@oms.test'],
-            'staff' => ['name' => 'OMS Staff', 'email' => 'staff@oms.test'],
+            ['role' => 'admin', 'name' => 'OMS Admin', 'email' => 'admin@oms.test'],
+            ['role' => 'manager', 'name' => 'OMS Manager', 'email' => 'manager@oms.test'],
+            ['role' => 'staff', 'name' => 'OMS Staff', 'email' => 'staff@oms.test'],
         ];
+        if ($this->option('extended')) {
+            $accounts[] = ['role' => 'manager', 'name' => 'OMS Review Manager', 'email' => 'manager2@oms.test'];
+            $accounts[] = ['role' => 'staff', 'name' => 'OMS Review Staff', 'email' => 'staff2@oms.test'];
+        }
 
         $assignExisting = (bool) $this->option('assign-existing');
 
@@ -41,26 +46,25 @@ final class CreateDemoUsersCommand extends Command
                 $guardName = Guard::getDefaultName(User::class);
                 $roles = Role::query()
                     ->where('guard_name', $guardName)
-                    ->whereIn('name', array_keys($accounts))
+                    ->whereIn('name', array_column($accounts, 'role'))
                     ->get()
                     ->keyBy('name');
 
                 $rows = [];
 
-                foreach ($accounts as $roleName => $account) {
+                foreach ($accounts as ['role' => $roleName, 'name' => $name, 'email' => $email]) {
                     $role = $roles->get($roleName);
 
                     if (! $role instanceof Role || $role->guard_name !== $guardName) {
                         throw new DomainException("Run php artisan migrate to provision the {$roleName} role before creating demo users.");
                     }
 
-                    $email = $account['email'];
                     $user = User::query()->where('email', $email)->lockForUpdate()->first();
                     $password = null;
 
                     if ($user === null) {
                         $password = Str::password(symbols: false);
-                        $user = User::query()->create([...$account, 'password' => $password]);
+                        $user = User::query()->create(['name' => $name, 'email' => $email, 'password' => $password]);
                     } elseif (
                         LoginEmail::normalize($user->email) !== $email
                         || $user->getDirectPermissions()->isNotEmpty()

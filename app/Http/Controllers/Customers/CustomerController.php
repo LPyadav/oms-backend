@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Customers;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customers\CustomerOrderSummaryRequest;
 use App\Http\Requests\Customers\DeactivateCustomerRequest;
 use App\Http\Requests\Customers\ListCustomersRequest;
 use App\Http\Requests\Customers\ShowCustomerRequest;
@@ -12,6 +13,7 @@ use App\Http\Requests\Customers\StoreCustomerRequest;
 use App\Http\Requests\Customers\UpdateCustomerRequest;
 use App\Http\Responses\Customers\CustomerResponse;
 use App\Models\User;
+use App\Services\Customers\CustomerOrderSummaryService;
 use App\Services\Customers\CustomerService;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +23,7 @@ final class CustomerController extends Controller
 {
     public function __construct(
         private readonly CustomerService $customerService,
+        private readonly CustomerOrderSummaryService $customerOrderSummary,
         private readonly CustomerResponse $customerResponse,
     ) {}
 
@@ -42,6 +45,13 @@ final class CustomerController extends Controller
         $record = $this->customerService->find($this->actor($request), $customer);
 
         return $this->customerResponse->show($record, $request);
+    }
+
+    public function orderSummary(CustomerOrderSummaryRequest $request, string $customer): JsonResponse
+    {
+        $summary = $this->customerOrderSummary->summarize($this->actor($request), $customer);
+
+        return $this->customerResponse->orderSummary($summary);
     }
 
     public function store(StoreCustomerRequest $request): JsonResponse

@@ -127,6 +127,17 @@ paths:
       summary: List users
       description: Requires an active Admin with the users.manage permission. Users are ordered by ID.
       parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 255 }
+          description: Literal name or email substring.
+        - name: is_active
+          in: query
+          schema: { type: integer, enum: [0, 1] }
+        - name: role
+          in: query
+          schema: { type: string }
+          description: Exact role name.
         - name: page
           in: query
           schema: { type: integer, minimum: 1, default: 1 }
@@ -191,6 +202,23 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /api/admin/users/{user}:
+    get:
+      tags: [Admin Users]
+      summary: Get one user for the account editor
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: User detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUserResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceNotFound' }
     patch:
       tags: [Admin Users]
       operationId: updateAdminUser
@@ -1857,6 +1885,133 @@ paths:
         '503':
           $ref: '#/components/responses/CatalogWriteContention'
 
+  /api/me/password:
+    patch:
+      tags: [Authentication]
+      summary: Change the current account password and revoke its API tokens
+      description: The replacement must differ from the current password. An account-specific rate limit applies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password, password_confirmation]
+              properties:
+                current_password: { type: string, format: password }
+                password: { type: string, format: password }
+                password_confirmation: { type: string, format: password }
+      responses:
+        '200':
+          description: Password changed. Sign in again with the new password.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandSuccess' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+
+  /api/customers/{customer}/order-summary:
+    get:
+      tags: [Customers]
+      summary: Get a customer's order counts, lifetime values, and recent orders
+      parameters:
+        - name: customer
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Orders in the current account's order scope.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerOrderSummaryResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceNotFound' }
+
+  /api/admin/access-audit-logs:
+    get:
+      tags: [Audit]
+      summary: List access audit records, newest first
+      parameters:
+        - { name: action, in: query, schema: { type: string, maxLength: 64 } }
+        - { name: actor_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: target_type, in: query, schema: { type: string, enum: [user, role] } }
+        - { name: target_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, default: 25 }
+          description: Page size. The maximum is configurable and defaults to 100.
+      responses:
+        '200':
+          description: Paginated audit records. Requires an active Admin with audit.view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/admin/access-audit-logs/{log}:
+    get:
+      tags: [Audit]
+      summary: Get one access audit record
+      parameters:
+        - { name: log, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Audit record and permitted before and after values.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceNotFound' }
+
+  /api/admin/audit-logs:
+    get:
+      tags: [Audit]
+      summary: List operational audit records, newest first
+      parameters:
+        - { name: action, in: query, schema: { type: string, maxLength: 64 } }
+        - { name: actor_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: target_type, in: query, schema: { type: string, enum: [order, customer, product] } }
+        - { name: target_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, default: 25 }
+          description: Page size. The maximum is configurable and defaults to 100.
+        - { name: date_from, in: query, schema: { type: string, format: date } }
+        - { name: date_to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Paginated audit records. Requires an active Admin with audit.view.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogListResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/admin/audit-logs/{log}:
+    get:
+      tags: [Audit]
+      summary: Get one operational audit record
+      parameters:
+        - { name: log, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Audit record and permitted before and after values.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceNotFound' }
+
 components:
   securitySchemes:
     BearerAuth:
@@ -3108,6 +3263,95 @@ components:
                 product:
                   $ref: '#/components/schemas/Product'
             meta: { type: 'null' }
+
+    CommandSuccess:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { const: true }
+        message: { type: string }
+        data: { type: 'null' }
+
+    CustomerOrderSummaryResponse:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { const: true }
+        message: { type: string }
+        data:
+          type: object
+          required: [order_summary]
+          properties:
+            order_summary:
+              type: object
+              required: [total_orders, pending_orders, completed_orders, cancelled_orders, total_value_by_currency, recent_orders]
+              properties:
+                total_orders: { type: integer, minimum: 0 }
+                pending_orders: { type: integer, minimum: 0 }
+                completed_orders: { type: integer, minimum: 0 }
+                cancelled_orders: { type: integer, minimum: 0 }
+                total_value_by_currency:
+                  type: array
+                  items:
+                    type: object
+                    required: [currency, total_minor]
+                    properties:
+                      currency: { type: string, pattern: '^[A-Z]{3}$' }
+                      total_minor: { type: string, pattern: '^[0-9]+$' }
+                recent_orders:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: object
+                    required: [id, order_number, order_date, status, currency, grand_total_minor]
+                    properties:
+                      id: { type: integer, minimum: 1 }
+                      order_number: { type: string }
+                      order_date: { type: string, format: date }
+                      status: { $ref: '#/components/schemas/OrderStatus' }
+                      currency: { type: string, pattern: '^[A-Z]{3}$' }
+                      grand_total_minor: { $ref: '#/components/schemas/OrderMinorUnits' }
+
+    AuditLog:
+      type: object
+      required: [id, actor_id, target_type, target_id, action, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        actor_id: { type: integer, minimum: 1 }
+        actor_name: { type: [string, 'null'] }
+        target_type: { type: string, enum: [user, role, order, customer, product] }
+        target_id: { type: integer, minimum: 1 }
+        action: { type: string }
+        created_at: { type: string, format: date-time }
+        before_values: { type: [object, 'null'] }
+        after_values: { type: object }
+
+    AuditLogListResponse:
+      type: object
+      required: [success, message, data, meta]
+      properties:
+        success: { const: true }
+        message: { type: string }
+        data:
+          type: object
+          required: [logs]
+          properties:
+            logs:
+              type: array
+              items: { $ref: '#/components/schemas/AuditLog' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    AuditLogResponse:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { const: true }
+        message: { type: string }
+        data:
+          type: object
+          required: [log]
+          properties:
+            log: { $ref: '#/components/schemas/AuditLog' }
 
     ErrorEnvelope:
       allOf:

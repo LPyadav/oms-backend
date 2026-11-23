@@ -7,12 +7,14 @@ namespace App\Http\Responses\Customers;
 use App\Http\Resources\CustomerResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\Customer;
+use App\Services\Customers\CustomerOrderSummaryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Lang;
 use Symfony\Component\HttpFoundation\Response;
 
+/** @phpstan-import-type OrderSummary from CustomerOrderSummaryService */
 final readonly class CustomerResponse
 {
     public function __construct(
@@ -41,6 +43,17 @@ final readonly class CustomerResponse
     public function show(Customer $customer, Request $request): JsonResponse
     {
         return $this->customer($customer, $request, Lang::string('api.customers.retrieved'));
+    }
+
+    /**
+     * @param  OrderSummary  $summary
+     */
+    public function orderSummary(array $summary): JsonResponse
+    {
+        return $this->apiResponse->success(
+            message: Lang::string('api.customers.order_summary_retrieved'),
+            data: ['order_summary' => $summary],
+        );
     }
 
     public function create(Customer $customer, Request $request): JsonResponse
