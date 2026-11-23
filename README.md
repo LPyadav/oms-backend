@@ -323,6 +323,46 @@ limit is 50 entries. Set `ORDERS_SYSTEM_ACTIVITY_LIMIT` to a value from
 1 to 200. Notes, status history, and assignment history are still
 available in their respective fields.
 
+### Dashboard
+
+| Method | Endpoint | Operation |
+| --- | --- | --- |
+| GET | /api/dashboard | Retrieve all-time order metrics and recent orders |
+| GET | /api/dashboard/revenue-trend | Retrieve completed-order revenue by day, week, or month |
+
+Send a Sanctum Bearer token with `dashboard.view` and `orders.view.any`.
+These are default Admin and Manager grants. The customer and product totals
+also require `customers.view` and `products.view`, respectively. A hidden
+count is `null` and an authorized empty count is zero. Catalog counts include
+active and inactive records. Recent orders contain order summary fields and
+sort by order date descending, then ID descending.
+
+The overview counts every non-deleted order and includes all seven order
+statuses. Revenue and average order value use stored totals including tax for
+non-deleted Completed orders with a completion timestamp. Financial metrics
+are calculated separately for each stored currency. The overview returns
+`total_revenue_minor` as an exact decimal string in minor units, with `"0"` for
+zero revenue. Average order value rounds half up from the exact total to
+the nearest minor unit and is returned as an integer. Recent order amounts
+are also integers in minor units.
+
+The revenue trend accepts `group_by=day|week|month` and an optional pair
+of inclusive `date_from` and `date_to` dates in `YYYY-MM-DD` format. By
+default it returns daily points for the last 30 calendar days including
+today. Each order contributes to the period containing the local date of
+its `completed_at` in `DASHBOARD_TIMEZONE`, which defaults to UTC.
+Weeks start on Monday. Response dates and bucket labels preserve the
+requested calendar range, including any date skipped in the reporting
+timezone. A daily bucket for a skipped date has zero orders and revenue.
+Every bucket returns `revenue_minor` as an exact decimal string in minor
+units. Empty buckets return `"0"` and zero completed orders. An empty result
+uses the configured Orders currency.
+
+Set `DASHBOARD_RECENT_ORDERS_LIMIT` to change the overview recent-order
+count. Set `DASHBOARD_REVENUE_DEFAULT_DAYS` and
+`DASHBOARD_REVENUE_MAX_DAYS` to configure the date window. The maximum
+is capped at 366 days.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |

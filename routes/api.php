@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Customers\CustomerController;
+use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Roles\AdminRoleController;
@@ -30,6 +31,10 @@ Route::middleware('auth:sanctum')->group(static function (): void {
 
     Route::get('/me', [AuthController::class, 'me'])
         ->name('auth.me');
+
+    Route::get('/dashboard', [DashboardController::class, 'show'])->name('dashboard.show');
+    Route::get('/dashboard/revenue-trend', [DashboardController::class, 'revenueTrend'])
+        ->name('dashboard.revenue-trend');
 
     Route::prefix('customers')->name('customers.')->group(static function (): void {
         Route::get('/', [CustomerController::class, 'index'])->name('index');

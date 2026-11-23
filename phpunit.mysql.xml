@@ -11,6 +11,7 @@
         <testsuite name="MySQL regressions">
             <file>tests/Feature/Auth/LoginTest.php</file>
             <file>tests/Feature/Customers/CustomerManagementTest.php</file>
+            <file>tests/Feature/Dashboard/DashboardTest.php</file>
             <file>tests/Feature/Orders/OrderActivityTest.php</file>
             <file>tests/Feature/Orders/OrderAssigneeLookupTest.php</file>
             <file>tests/Feature/Orders/OrderAssignmentConcurrencyTest.php</file>
