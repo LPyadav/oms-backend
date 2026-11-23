@@ -6,6 +6,7 @@ namespace App\Services\Reports;
 
 use App\Enums\OrderStatus;
 use App\Models\Order;
+use App\Services\Orders\OrderExportRows;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +14,7 @@ use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use UnexpectedValueException;
 
 /**
@@ -71,6 +73,7 @@ final readonly class SalesTaxReport
         private OrderReportTotals $reportTotals,
         private OrderCompletionDateFilter $completionDates,
         private ReportOrderPage $orderPage,
+        private OrderExportRows $exportRows,
     ) {}
 
     /**
@@ -105,11 +108,16 @@ final readonly class SalesTaxReport
 
     /**
      * @param  SalesTaxReportFilters  $filters
-     * @return list<SalesTaxReportRow>
+     * @return LazyCollection<int, SalesTaxReportRow>
      */
-    public function exportRows(array $filters, int $maximumRows): array
+    public function exportRows(array $filters, int $maximumRows): LazyCollection
     {
-        return DB::transaction(fn (): array => $this->page($this->filteredOrders($filters), 1, $maximumRows));
+        $query = $this->orderPage->query($this->filteredOrders($filters), 'orders.completed_at', 1, $maximumRows);
+
+        return $this->exportRows->fromQuery($query)->map(fn (Order $order): array => $this->row(
+            $order,
+            (string) $order->getAttribute('export_customer_name'),
+        ));
     }
 
     /**
@@ -201,26 +209,34 @@ final readonly class SalesTaxReport
         $rows = [];
         foreach ($orders as $order) {
             $customer = $order->customer;
-            $completedAt = $order->completed_at;
-            if ($customer === null || $completedAt === null) {
+            if ($customer === null) {
                 throw new UnexpectedValueException('The sales and tax report query returned an incomplete order.');
             }
 
-            $rows[] = [
-                'id' => $order->id,
-                'order_number' => $order->order_number,
-                'completed_at' => $completedAt->utc()->format('Y-m-d\TH:i:s.u\Z'),
-                'customer' => ['id' => $customer->id, 'name' => $customer->name],
-                'currency' => $order->currency,
-                'subtotal_minor' => $order->subtotal_minor,
-                'item_discount_minor' => $order->discount_total_minor - $order->order_discount_minor,
-                'order_discount_minor' => $order->order_discount_minor,
-                'net_total_minor' => $order->subtotal_minor - $order->discount_total_minor,
-                'tax_total_minor' => $order->tax_total_minor,
-                'grand_total_minor' => $order->grand_total_minor,
-            ];
+            $rows[] = $this->row($order, $customer->name);
         }
 
         return $rows;
+    }
+
+    /** @return SalesTaxReportRow */
+    private function row(Order $order, string $customerName): array
+    {
+        $completedAt = $order->completed_at
+            ?? throw new UnexpectedValueException('The sales and tax report query returned an incomplete order.');
+
+        return [
+            'id' => $order->id,
+            'order_number' => $order->order_number,
+            'completed_at' => $completedAt->utc()->format('Y-m-d\TH:i:s.u\Z'),
+            'customer' => ['id' => $order->customer_id, 'name' => $customerName],
+            'currency' => $order->currency,
+            'subtotal_minor' => $order->subtotal_minor,
+            'item_discount_minor' => $order->discount_total_minor - $order->order_discount_minor,
+            'order_discount_minor' => $order->order_discount_minor,
+            'net_total_minor' => $order->subtotal_minor - $order->discount_total_minor,
+            'tax_total_minor' => $order->tax_total_minor,
+            'grand_total_minor' => $order->grand_total_minor,
+        ];
     }
 }

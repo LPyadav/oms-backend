@@ -39,6 +39,15 @@ final readonly class OrderReader
         return $this->listQuery->paginate($this->visibleOrders($actor), $criteria, $actor);
     }
 
+    /**
+     * @param  OrderListCriteria  $criteria
+     * @return Builder<Order>
+     */
+    public function forExport(User $actor, array $criteria): Builder
+    {
+        return $this->listQuery->forExport($this->visibleOrders($actor), $criteria, $actor);
+    }
+
     public function find(User $actor, string $orderId): Order
     {
         return DB::transaction(fn (): Order => $this->visibleOrders($actor)

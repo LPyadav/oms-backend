@@ -153,6 +153,29 @@ final class ReportExportTest extends TestCase
         }
     }
 
+    public function test_orders_and_reports_export_more_than_one_thousand_matching_orders(): void
+    {
+        $manager = $this->authenticateAsManager();
+        $customer = Customer::factory()->createOne();
+        $orders = Order::factory()->count(1_005)->create([
+            'customer_id' => $customer->id,
+            'created_by' => $manager->id,
+            'order_date' => '2026-11-20',
+            'status' => OrderStatus::Completed,
+            'completed_at' => '2026-11-20 12:00:00',
+        ]);
+        $orderNumbers = $orders->reverse()->pluck('order_number')->all();
+
+        foreach (['/api/orders/export' => '&sort=customer', self::FULFILLMENT => '', self::SALES_TAX => ''] as $endpoint => $sort) {
+            $response = $this->getJson($endpoint.'?date_from=2026-11-20&date_to=2026-11-20&per_page=1'.$sort)
+                ->assertOk()
+                ->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+
+            $rows = $this->rows($response->streamedContent());
+            self::assertSame(['Order number', ...$orderNumbers], array_column($rows, 0));
+        }
+    }
+
     public function test_exports_enforce_report_date_range_validation(): void
     {
         $this->authenticateAsManager();
@@ -165,10 +188,12 @@ final class ReportExportTest extends TestCase
         }
     }
 
-    private function authenticateAsManager(): void
+    private function authenticateAsManager(): User
     {
         $manager = User::factory()->createOne()->assignRole('manager');
         $this->withToken($manager->createToken('report export')->plainTextToken);
+
+        return $manager;
     }
 
     /** @return list<array<array-key, string|null>> */
