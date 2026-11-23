@@ -254,6 +254,25 @@ so the database can reuse each set of matches. Broad substrings still
 scan searchable data. For a known identifier, use the indexed
 `order_number` or `sku` filter.
 
+### Optional Redis cache for order search
+
+Set `ORDERS_ITEM_SEARCH_CACHE_ENABLED=true` and configure the existing Redis
+host, port and credentials. This lookup uses a separate Laravel Redis cache
+store with short connection and read timeouts. It does not change `CACHE_STORE`.
+
+The cache stores only order IDs matched by item snapshot name or SKU. The
+database still applies order authorization, customer contact scope, search
+filters, sorting and totals on every request. Entries expire after 30 seconds
+by default. Committed changes to order items invalidate the prior generation.
+Out-of-band writes or an invalidation missed during a Redis outage may leave
+matches stale until the configured TTL expires.
+
+Use `ORDERS_ITEM_SEARCH_CACHE_TTL_SECONDS` (1–300) and
+`ORDERS_ITEM_SEARCH_CACHE_MAX_IDS` (1–5,000) to tune the cache. The default
+limit is 1,000 IDs. Large matches and Redis failures use the SQL search.
+This helps repeated terms. A cold search can still take longer than the
+client timeout.
+
 Order writes accept JSON. Send an active customer ID, an order date, and a
 non-empty list of distinct product IDs and positive quantities to create a
 draft. Optional fields include priority, an active assignee, an initial

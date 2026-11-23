@@ -38,6 +38,7 @@ final class OrderListQuery
 {
     public function __construct(
         private readonly CustomerPolicy $customerPolicy,
+        private readonly OrderItemSearchCache $itemSearchCache,
     ) {}
 
     /**
@@ -152,13 +153,16 @@ final class OrderListQuery
             $matchingCustomerIds->orWhereRaw("customers.email like ? escape '!'", [$pattern]);
         }
 
-        $query->where(static function (Builder $matches) use ($pattern, $matchingCustomerIds, $contactScope): void {
+        $matchingItems = OrderItem::query()
+            ->select('order_items.order_id')
+            ->whereRaw("(order_items.product_name like ? escape '!' or order_items.product_sku like ? escape '!')", [$pattern, $pattern]);
+        $matchingItemOrderIds = $this->itemSearchCache->matchingOrderIds($matchingItems, $pattern);
+
+        $query->where(static function (Builder $matches) use ($pattern, $matchingCustomerIds, $matchingItemOrderIds, $contactScope): void {
             // Independent ID lookups let the database reuse each set of matches.
             $matches->whereRaw("orders.order_number like ? escape '!'", [$pattern])
                 ->orWhereIn('orders.customer_id', $matchingCustomerIds)
-                ->orWhereIn('orders.id', OrderItem::query()
-                    ->select('order_items.order_id')
-                    ->whereRaw("(order_items.product_name like ? escape '!' or order_items.product_sku like ? escape '!')", [$pattern, $pattern]))
+                ->orWhereIn('orders.id', $matchingItemOrderIds)
                 ->orWhereIn('orders.assignee_id', User::query()
                     ->select('users.id')
                     ->whereRaw("users.name like ? escape '!'", [$pattern]));
