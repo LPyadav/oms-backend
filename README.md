@@ -180,6 +180,7 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | Method | Endpoint | Operation |
 | --- | --- | --- |
 | GET | /api/orders | List orders visible to the caller |
+| GET | /api/orders/export | Export matching orders as CSV |
 | POST | /api/orders | Create a draft order |
 | POST | /api/orders/preview | Calculate pricing for a new or editable order |
 | GET | /api/orders/assignees | List active employees for order assignment |
@@ -240,11 +241,38 @@ and from 433.2 to 91.3 ms p95 across 10 samples per query. These timings
 cover the page SELECT. Its plan scanned 40,000 index entries and loaded
 100 full order rows.
 
-An earlier 50,000-order fixture with 250,000 item snapshots measured a
-no-match substring search at 5.30 s p50 and 35.85 s p95 across 12 local
-API requests, with most of the time spent counting matches. For a known
-identifier, use the indexed `order_number` or `sku` filter. Narrow
-substring searches with the relevant status, assignee or date filters.
+An earlier HTTP benchmark with 50,000 orders and 250,000 item snapshots
+recorded 5.30 s p50 and 35.85 s p95 for a no-match substring across 12
+local requests. A separate paired listing-service run on MySQL 8.2.0
+used the same fixture size and five timed samples per version. No-match
+latency moved from 5.50 s p50 and 8.83 s p95 to 2.08 s p50 and
+4.17 s p95. A rare item-snapshot match moved from 36.89 s to 8.85 s
+p50 across three timed samples, with 25.58 s as the slowest candidate
+sample. The paired timings cover the listing service and database.
+
+Substring search uses independent customer, item and assignee ID queries
+so the database can reuse each set of matches. Broad substrings still
+scan searchable data. For a known identifier, use the indexed
+`order_number` or `sku` filter.
+
+### Optional Redis cache for order search
+
+Set `ORDERS_ITEM_SEARCH_CACHE_ENABLED=true` and configure the existing Redis
+host, port and credentials. This lookup uses a separate Laravel Redis cache
+store with short connection and read timeouts. It does not change `CACHE_STORE`.
+
+The cache stores only order IDs matched by item snapshot name or SKU. The
+database still applies order authorization, customer contact scope, search
+filters, sorting and totals on every request. Entries expire after 30 seconds
+by default. Committed changes to order items invalidate the prior generation.
+Out-of-band writes or an invalidation missed during a Redis outage may leave
+matches stale until the configured TTL expires.
+
+Use `ORDERS_ITEM_SEARCH_CACHE_TTL_SECONDS` (1–300) and
+`ORDERS_ITEM_SEARCH_CACHE_MAX_IDS` (1–5,000) to tune the cache. The default
+limit is 1,000 IDs. Large matches and Redis failures use the SQL search.
+This helps repeated terms. A cold search can still take longer than the
+client timeout.
 
 Order writes accept JSON. Send an active customer ID, an order date, and a
 non-empty list of distinct product IDs and positive quantities to create a
@@ -347,6 +375,15 @@ newest first, with higher IDs first when timestamps match. The default
 limit is 50 entries. Set `ORDERS_SYSTEM_ACTIVITY_LIMIT` to a value from
 1 to 200. Notes, status history, and assignment history are still
 available in their respective fields.
+
+### Order CSV export
+
+Use `GET /api/orders/export` with an authenticated account that has `orders.view.any`.
+The CSV uses the Orders list search, filters and sort across all matching pages.
+Limit results to 1,000 orders or narrow the filters after a 422 response.
+Each account can request five exports per minute. The UTF-8 download contains order
+summaries and decimal totals with a currency column. Customer email, phone, address,
+and employee email and roles are omitted.
 
 ### Order notifications
 
@@ -481,6 +518,20 @@ applied at order completion, including order-level tax overrides. Report totals
 use the same filtered snapshot as the rows and are grouped by saved currency.
 Aggregate minor-unit amounts are decimal integer strings.
 
+### Report CSV downloads
+
+Use `GET /api/reports/orders/export` or `GET /api/reports/sales-tax/export`
+with the same permissions and filters as the corresponding JSON report.
+Each UTF-8 CSV contains one row per matching order across all pages in
+report order, with decimal amounts alongside their currency codes. The
+Order & Fulfillment CSV uses the business order date. The Sales & Tax CSV
+shows completion time in UTC and the saved pricing and tax amounts.
+
+An empty result returns the CSV headers. If more than 1,000 orders match,
+the API returns a `422` response asking the caller to narrow the filters.
+The Orders and report downloads share a limit of five exports per account
+per minute.
+
 ### Report history beyond 366 days
 
 Split the requested history into consecutive, non-overlapping windows of
@@ -593,6 +644,29 @@ JavaScript on the same origin can read the stored token. An XSS flaw
 could expose it until expiry or revocation. Use HTTPS in production to
 protect the token in transit.
 
+### Self-service password recovery
+
+Set `AUTH_PASSWORD_RESET_FRONTEND_URL` to the Vue origin in backend `.env`.
+The default `MAIL_MAILER=log` writes the reset link to
+`storage/logs/laravel.log` with the sample logging configuration.
+For inbox delivery, configure SMTP. Run a queue worker that serves
+`default`, for example `php artisan queue:work --queue=notifications,default`.
+
+See the [password recovery setup guide](docs/password-recovery.md) for
+local testing, SMTP settings, and worker restart steps.
+
+| Method | Endpoint | Behavior |
+| --- | --- | --- |
+| POST | /api/forgot-password | Accepts an email and returns the same `202` whether or not an active account exists. |
+| POST | /api/reset-password | Accepts the emailed token, email, password and confirmation. Consumes a valid link and revokes the account's bearer tokens. |
+
+The link expires after 60 minutes. It uses a URL fragment on the configured
+frontend origin. The frontend reads the fragment and sends credentials only
+in the reset request body. Use **Forgot password?** on the sign-in page to
+verify delivery and reset with a test account. After resetting, check that
+sign-in works with the new password and an earlier session can no longer call
+`/api/me`.
+
 ## Verify the authentication flow
 
 Use an existing local development user, or create one from `php artisan tinker`.
@@ -653,6 +727,10 @@ the same health response through the Vite proxy.
 | `RATE_LIMIT_API_PER_IP` | 120 per minute | Shared IP quota across registered API routes |
 | `RATE_LIMIT_LOGIN_PER_IP` | 30 per minute | Additional login quota for the client IP |
 | `RATE_LIMIT_LOGIN_PER_EMAIL` | 5 per minute | Additional login quota for the normalized email, across IPs |
+| `RATE_LIMIT_PASSWORD_LINK_PER_IP` | 10 per minute | Additional link requests for the client IP |
+| `RATE_LIMIT_PASSWORD_LINK_PER_EMAIL` | 3 per minute | Additional link requests for the normalized email, across IPs |
+| `RATE_LIMIT_PASSWORD_RESET_PER_IP` | 15 per minute | Additional reset submissions for the client IP |
+| `RATE_LIMIT_PASSWORD_RESET_PER_EMAIL` | 5 per minute | Additional reset submissions for the normalized email, across IPs |
 | `RATE_LIMIT_PASSWORD_CHANGE_PER_ACCOUNT` | 6 requests | Additional password change quota for each authenticated account |
 | `RATE_LIMIT_PASSWORD_CHANGE_WINDOW_MINUTES` | 1 minute | Window for the account password change quota |
 

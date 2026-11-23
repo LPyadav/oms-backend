@@ -105,6 +105,15 @@ final readonly class SalesTaxReport
 
     /**
      * @param  SalesTaxReportFilters  $filters
+     * @return list<SalesTaxReportRow>
+     */
+    public function exportRows(array $filters, int $maximumRows): array
+    {
+        return DB::transaction(fn (): array => $this->page($this->filteredOrders($filters), 1, $maximumRows));
+    }
+
+    /**
+     * @param  SalesTaxReportFilters  $filters
      * @return Builder<Order>
      */
     private function filteredOrders(array $filters): Builder

@@ -83,6 +83,7 @@ final readonly class OrderService
         private AuditLogWriter $auditLogWriter,
         private OrderWriteTransaction $writeTransaction,
         private OrderNotificationOutbox $notificationOutbox,
+        private OrderItemSearchCache $itemSearchCache,
     ) {}
 
     /**
@@ -607,6 +608,8 @@ final readonly class OrderService
                 throw new RuntimeException('An order item could not be saved.');
             }
         }
+
+        $this->itemSearchCache->invalidateAfterCommit();
     }
 
     private function appendInitialNote(Order $order, User $actor, string $body): void

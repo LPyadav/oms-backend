@@ -10,6 +10,7 @@ use App\Policies\UserPolicy;
 use App\Services\Audit\AccessAuditLogWriter;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 use RuntimeException;
 
 final readonly class UserStatusService
@@ -72,6 +73,7 @@ final readonly class UserStatusService
             }
 
             $target->tokens()->delete();
+            Password::deleteToken($target);
             $this->auditLogWriter->record(
                 $lockedActor,
                 $target,

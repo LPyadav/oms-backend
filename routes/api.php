@@ -5,15 +5,19 @@ declare(strict_types=1);
 use App\Http\Controllers\Audit\AccessAuditLogController;
 use App\Http\Controllers\Audit\OperationalAuditController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\PasswordRecoveryController;
 use App\Http\Controllers\Customers\CustomerController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Notifications\OrderNotificationController;
 use App\Http\Controllers\Orders\OrderController;
+use App\Http\Controllers\Orders\OrderExportController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reports\ReportController;
+use App\Http\Controllers\Reports\ReportExportController;
 use App\Http\Controllers\Roles\AdminRoleController;
 use App\Http\Controllers\Users\AdminUserController;
 use App\Http\Responses\ApiResponse;
+use App\Models\Order;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Route;
@@ -28,6 +32,14 @@ Route::get('/health', static function (ApiResponse $apiResponse): JsonResponse {
 Route::post('/login', [AuthController::class, 'login'])
     ->middleware('throttle:login')
     ->name('auth.login');
+
+Route::post('/forgot-password', [PasswordRecoveryController::class, 'requestLink'])
+    ->middleware('throttle:password-link')
+    ->name('auth.password.email');
+
+Route::post('/reset-password', [PasswordRecoveryController::class, 'reset'])
+    ->middleware('throttle:password-reset')
+    ->name('auth.password.reset');
 
 Route::middleware('auth:sanctum')->group(static function (): void {
     Route::post('/logout', [AuthController::class, 'logout'])
@@ -46,8 +58,14 @@ Route::middleware('auth:sanctum')->group(static function (): void {
 
     Route::get('/reports/orders', [ReportController::class, 'orderFulfillment'])
         ->name('reports.orders');
+    Route::get('/reports/orders/export', [ReportExportController::class, 'orderFulfillment'])
+        ->middleware('throttle:order-export')
+        ->name('reports.orders.export');
     Route::get('/reports/sales-tax', [ReportController::class, 'salesTax'])
         ->name('reports.sales-tax');
+    Route::get('/reports/sales-tax/export', [ReportExportController::class, 'salesTax'])
+        ->middleware('throttle:order-export')
+        ->name('reports.sales-tax.export');
 
     Route::prefix('customers')->name('customers.')->group(static function (): void {
         Route::get('/', [CustomerController::class, 'index'])->name('index');
@@ -82,6 +100,11 @@ Route::middleware('auth:sanctum')->group(static function (): void {
     Route::prefix('orders')->name('orders.')->group(static function (): void {
         Route::get('/', [OrderController::class, 'index'])->name('index');
         Route::post('/', [OrderController::class, 'store'])->name('store');
+
+        Route::get('/export', OrderExportController::class)
+            ->can('viewAll', Order::class)
+            ->middleware('throttle:order-export')
+            ->name('export');
 
         Route::get('/assignees', [OrderController::class, 'assignees'])->name('assignees');
         Route::post('/preview', [OrderController::class, 'preview'])->name('preview');

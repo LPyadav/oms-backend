@@ -180,6 +180,19 @@ return [
             'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
         ],
 
+        'order_item_search' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'username' => env('REDIS_USERNAME'),
+            'password' => env('REDIS_PASSWORD'),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('REDIS_CACHE_DB', '1'),
+            'timeout' => 0.5,
+            'read_timeout' => 0.5,
+            'read_write_timeout' => 0.5,
+            'max_retries' => 0,
+        ],
+
     ],
 
 ];
