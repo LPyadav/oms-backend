@@ -6,9 +6,11 @@ namespace App\Services\Reports;
 
 use App\Enums\OrderStatus;
 use App\Models\Order;
+use App\Services\Orders\OrderExportRows;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use UnexpectedValueException;
 
 /**
@@ -47,6 +49,7 @@ final readonly class OrderFulfillmentReport
     public function __construct(
         private OrderReportTotals $reportTotals,
         private ReportOrderPage $orderPage,
+        private OrderExportRows $exportRows,
     ) {}
 
     /**
@@ -81,11 +84,17 @@ final readonly class OrderFulfillmentReport
 
     /**
      * @param  OrderFulfillmentFilters  $filters
-     * @return list<OrderFulfillmentRow>
+     * @return LazyCollection<int, OrderFulfillmentRow>
      */
-    public function exportRows(array $filters, int $maximumRows): array
+    public function exportRows(array $filters, int $maximumRows): LazyCollection
     {
-        return DB::transaction(fn (): array => $this->page($this->filteredOrders($filters), 1, $maximumRows));
+        $query = $this->orderPage->query($this->filteredOrders($filters), 'orders.order_date', 1, $maximumRows);
+
+        return $this->exportRows->fromQuery($query)->map(fn (Order $order): array => $this->row(
+            $order,
+            (string) $order->getAttribute('export_customer_name'),
+            $order->getAttribute('export_assignee_name'),
+        ));
     }
 
     /**
@@ -162,19 +171,27 @@ final readonly class OrderFulfillmentReport
                 throw new UnexpectedValueException('The fulfillment report query returned an order without a customer.');
             }
 
-            $rows[] = [
-                'id' => $order->id,
-                'order_number' => $order->order_number,
-                'order_date' => $order->order_date->toDateString(),
-                'customer' => ['id' => $customer->id, 'name' => $customer->name],
-                'priority' => $order->priority->value,
-                'status' => $order->status->value,
-                'assignee' => $assignee === null ? null : ['id' => $assignee->id, 'name' => $assignee->name],
-                'currency' => $order->currency,
-                'grand_total_minor' => $order->grand_total_minor,
-            ];
+            $rows[] = $this->row($order, $customer->name, $assignee?->name);
         }
 
         return $rows;
+    }
+
+    /** @return OrderFulfillmentRow */
+    private function row(Order $order, string $customerName, ?string $assigneeName): array
+    {
+        return [
+            'id' => $order->id,
+            'order_number' => $order->order_number,
+            'order_date' => $order->order_date->toDateString(),
+            'customer' => ['id' => $order->customer_id, 'name' => $customerName],
+            'priority' => $order->priority->value,
+            'status' => $order->status->value,
+            'assignee' => $order->assignee_id === null || $assigneeName === null
+                ? null
+                : ['id' => $order->assignee_id, 'name' => $assigneeName],
+            'currency' => $order->currency,
+            'grand_total_minor' => $order->grand_total_minor,
+        ];
     }
 }

@@ -1078,7 +1078,9 @@ paths:
       summary: Export matching orders as CSV
       description: >-
         Requires orders.view.any. Applies the same search, filters and sorting as the Orders list, independent
-        of pagination. Exports up to 1,000 orders per request and allows five requests per account per minute.
+        of pagination. The default limit is 50,000 matching orders per download, configurable with
+        ORDERS_EXPORT_MAX_ROWS. Exceeding the limit returns a validation error in errors.fields.export.
+        CSV exports share five requests per account per minute.
         A larger result returns a validation error in errors.fields.export. Customer and employee contact
         details are omitted. Amounts use two decimal places with a separate currency column.
       parameters:
@@ -1775,9 +1777,10 @@ paths:
       summary: Export Order and Fulfillment rows as CSV
       description: >-
         Requires reports.view and orders.view.any. Uses the same filters and
-        row order as GET /api/reports/orders across all matching pages. The
-        1,000-row cap returns a validation error in errors.fields.export when
-        exceeded. CSV exports share five requests per account per minute.
+        row order as GET /api/reports/orders across all matching pages. The default
+        limit is 50,000 matching orders per download, configurable with REPORTS_EXPORT_MAX_ROWS.
+        Exceeding the limit returns a validation error in errors.fields.export.
+        CSV exports share five requests per account per minute.
       parameters:
         - { name: date_from, in: query, schema: { type: string, format: date }, description: 'Inclusive business order date. Supply both dates or omit both.' }
         - { name: date_to, in: query, schema: { type: string, format: date }, description: 'Inclusive business order date. Supply both dates or omit both.' }
@@ -1808,9 +1811,9 @@ paths:
         Requires reports.view and orders.view.any. Uses the same filters and
         row order as GET /api/reports/sales-tax across all matching pages.
         Includes completion time in UTC and the stored full-order amounts,
-        including when a product filter is used. The 1,000-row cap returns a
-        validation error in errors.fields.export when exceeded. CSV exports
-        share five requests per account per minute.
+        including when a product filter is used. The default limit is 50,000 matching orders
+        per download, configurable with REPORTS_EXPORT_MAX_ROWS. Exceeding the limit returns
+        a validation error in errors.fields.export. CSV exports share five requests per account per minute.
       parameters:
         - { name: date_from, in: query, schema: { type: string, format: date }, description: 'Inclusive local completion date. Supply both dates or omit both.' }
         - { name: date_to, in: query, schema: { type: string, format: date }, description: 'Inclusive local completion date. Supply both dates or omit both.' }

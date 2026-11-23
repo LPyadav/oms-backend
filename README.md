@@ -380,7 +380,9 @@ available in their respective fields.
 
 Use `GET /api/orders/export` with an authenticated account that has `orders.view.any`.
 The CSV uses the Orders list search, filters and sort across all matching pages.
-Limit results to 1,000 orders or narrow the filters after a 422 response.
+The default is 50,000 matching orders per download. Set `ORDERS_EXPORT_MAX_ROWS`
+to an integer from 1 to 50,000 to lower the limit. If more orders match,
+the API returns a `422` response asking the caller to narrow the filters.
 Each account can request five exports per minute. The UTF-8 download contains order
 summaries and decimal totals with a currency column. Customer email, phone, address,
 and employee email and roles are omitted.
@@ -527,8 +529,10 @@ report order, with decimal amounts alongside their currency codes. The
 Order & Fulfillment CSV uses the business order date. The Sales & Tax CSV
 shows completion time in UTC and the saved pricing and tax amounts.
 
-An empty result returns the CSV headers. If more than 1,000 orders match,
-the API returns a `422` response asking the caller to narrow the filters.
+An empty result returns the CSV headers. The default is 50,000 matching orders
+per download. Set `REPORTS_EXPORT_MAX_ROWS` to an integer from 1 to 50,000 to
+lower the limit. If more orders match, the API returns a `422` response asking
+the caller to narrow the filters.
 The Orders and report downloads share a limit of five exports per account
 per minute.
 

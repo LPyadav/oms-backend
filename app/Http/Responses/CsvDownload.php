@@ -4,38 +4,84 @@ declare(strict_types=1);
 
 namespace App\Http\Responses;
 
+use Illuminate\Support\Facades\Lang;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 final class CsvDownload
 {
+    private const int STREAM_CHUNK_BYTES = 64 * 1024;
+
     /**
      * @param  list<string>  $columns
      * @param  iterable<list<string>>  $rows
      */
-    public function download(string $filename, array $columns, iterable $rows): StreamedResponse
+    public function download(string $filename, array $columns, iterable $rows, int $limit): StreamedResponse
     {
-        return response()->streamDownload(
-            static function () use ($columns, $rows): void {
-                $output = fopen('php://output', 'wb');
-                if ($output === false) {
-                    throw new RuntimeException('Unable to open the CSV output.');
+        $file = tmpfile();
+        if ($file === false) {
+            throw new RuntimeException('Unable to open a temporary CSV file.');
+        }
+
+        // Prepare the download before sending headers so overflow can return a JSON validation error.
+        try {
+            if (fwrite($file, "\xEF\xBB\xBF") !== 3) {
+                throw new RuntimeException('Unable to write the CSV byte order mark.');
+            }
+            $this->writeRow($file, $columns);
+
+            $rowsWritten = 0;
+            foreach ($rows as $row) {
+                if ($rowsWritten === $limit) {
+                    throw ValidationException::withMessages([
+                        'export' => Lang::string('api.orders.export_limit', ['limit' => $limit]),
+                    ]);
                 }
 
-                try {
-                    fwrite($output, "\xEF\xBB\xBF");
-                    fputcsv($output, $columns, escape: '', eol: "\r\n");
+                $this->writeRow($file, $row);
+                $rowsWritten++;
+            }
 
-                    foreach ($rows as $row) {
-                        fputcsv($output, $row, escape: '', eol: "\r\n");
+            if (! rewind($file)) {
+                throw new RuntimeException('Unable to rewind the CSV file.');
+            }
+        } catch (Throwable $exception) {
+            fclose($file);
+
+            throw $exception;
+        }
+
+        return response()->streamDownload(
+            static function () use ($file): void {
+                try {
+                    while (! feof($file)) {
+                        $chunk = fread($file, self::STREAM_CHUNK_BYTES);
+                        if ($chunk === false) {
+                            throw new RuntimeException('Unable to read the CSV file.');
+                        }
+
+                        echo $chunk;
                     }
                 } finally {
-                    fclose($output);
+                    fclose($file);
                 }
             },
             $filename,
             ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'no-store, private'],
         );
+    }
+
+    /**
+     * @param  resource  $file
+     * @param  list<string>  $row
+     */
+    private function writeRow($file, array $row): void
+    {
+        if (fputcsv($file, $row, escape: '', eol: "\r\n") === false) {
+            throw new RuntimeException('Unable to write a CSV row.');
+        }
     }
 
     public static function safeText(string $value): string

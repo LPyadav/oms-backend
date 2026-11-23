@@ -48,6 +48,40 @@ final class OrderListQuery
      */
     public function paginate(Builder $query, array $criteria, User $actor): LengthAwarePaginator
     {
+        $this->applyFilters($query, $criteria, $actor);
+
+        $sort = $criteria['sort'];
+        if ($sort === OrderSortField::Customer || ($sort === OrderSortField::OrderDate && $criteria['page'] > 1)) {
+            return $this->paginateByPageKeys($query, $criteria);
+        }
+
+        $direction = $criteria['direction'];
+        $this->applySort($query, $sort, $direction);
+
+        return $query->with(['customer', 'assignee:id,name'])
+            ->orderBy('orders.id', $direction)
+            ->paginate(perPage: $criteria['per_page'], page: $criteria['page']);
+    }
+
+    /**
+     * @param  Builder<Order>  $query
+     * @param  OrderListCriteria  $criteria
+     * @return Builder<Order>
+     */
+    public function forExport(Builder $query, array $criteria, User $actor): Builder
+    {
+        $this->applyFilters($query, $criteria, $actor);
+        $this->applySort($query, $criteria['sort'], $criteria['direction']);
+
+        return $query->orderBy('orders.id', $criteria['direction']);
+    }
+
+    /**
+     * @param  Builder<Order>  $query
+     * @param  OrderListCriteria  $criteria
+     */
+    private function applyFilters(Builder $query, array $criteria, User $actor): void
+    {
         if ($criteria['search'] !== null) {
             $this->applySearch($query, $criteria['search'], $this->customerPolicy->orderContactScope($actor));
         }
@@ -84,18 +118,6 @@ final class OrderListQuery
             $nextDate = CarbonImmutable::parse($dateTo, 'UTC')->addDay()->toDateString();
             $query->where('orders.order_date', '<', $nextDate);
         }
-
-        $sort = $criteria['sort'];
-        if ($sort === OrderSortField::Customer || ($sort === OrderSortField::OrderDate && $criteria['page'] > 1)) {
-            return $this->paginateByPageKeys($query, $criteria);
-        }
-
-        $direction = $criteria['direction'];
-        $this->applySort($query, $sort, $direction);
-
-        return $query->with(['customer', 'assignee:id,name'])
-            ->orderBy('orders.id', $direction)
-            ->paginate(perPage: $criteria['per_page'], page: $criteria['page']);
     }
 
     /**
@@ -114,14 +136,13 @@ final class OrderListQuery
         if ($total > 0) {
             $sortColumn = 'orders.order_date';
             if ($criteria['sort'] === OrderSortField::Customer) {
-                $query->join('customers as sort_customer', 'sort_customer.id', '=', 'orders.customer_id');
                 $sortColumn = 'sort_customer.name';
             }
 
             // Apply the offset to the filtered sort keys before loading full order rows.
+            $this->applySort($query, $criteria['sort'], $direction);
             $pageKeys = $query
                 ->select(['orders.id', $sortColumn.' as sort_value'])
-                ->orderBy($sortColumn, $direction)
                 ->orderBy('orders.id', $direction)
                 ->forPage($page, $perPage);
 
@@ -179,7 +200,6 @@ final class OrderListQuery
 
     /**
      * @param  Builder<Order>  $query
-     * @param  OrderSortField::OrderDate|OrderSortField::Total|OrderSortField::Status|OrderSortField::Priority  $field
      * @param  'asc'|'desc'  $direction
      */
     private function applySort(Builder $query, OrderSortField $field, string $direction): void
@@ -187,6 +207,9 @@ final class OrderListQuery
         $directionSql = $direction === 'asc' ? ' asc' : ' desc';
 
         match ($field) {
+            OrderSortField::Customer => $query
+                ->join('customers as sort_customer', 'sort_customer.id', '=', 'orders.customer_id')
+                ->orderBy('sort_customer.name', $direction),
             OrderSortField::OrderDate => $query->orderBy('orders.order_date', $direction),
             OrderSortField::Total => $query->orderBy('orders.grand_total_minor', $direction),
             OrderSortField::Status => $query->orderByRaw(
