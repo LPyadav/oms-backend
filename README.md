@@ -412,6 +412,38 @@ applied at order completion, including order-level tax overrides. Report totals
 use the same filtered snapshot as the rows and are grouped by saved currency.
 Aggregate minor-unit amounts are decimal integer strings.
 
+### Report history beyond 366 days
+
+Split the requested history into consecutive, non-overlapping windows of
+at most `REPORTS_MAX_DAYS` days. The default limit is 366. Both
+`date_from` and `date_to` are inclusive. Start each new window on the
+calendar day after the previous `date_to`. Keep the report endpoint and
+optional filters fixed across windows. Fulfillment uses `order_date`.
+Sales & Tax uses completion dates in `DASHBOARD_TIMEZONE`.
+
+With the default limit, retrieve `2024-01-01` through `2025-06-30` in
+these windows.
+
+| `date_from` | `date_to` | Inclusive days |
+| --- | --- | ---: |
+| `2024-01-01` | `2024-12-31` | 366 |
+| `2025-01-01` | `2025-06-30` | 181 |
+
+Start at `page=1` for each window, keep `per_page` fixed, and retrieve
+pages through `meta.last_page`. For a newest-first export, process the
+windows from newest to oldest and keep the order returned within each
+page.
+
+Use `data.totals` once per window. Each page includes totals for the
+entire filtered window. Sum `order_count` across windows and combine
+`data.totals.by_currency` entries by currency. Add each minor-unit
+amount with exact integer arithmetic such as JavaScript `BigInt` and
+serialize the combined money totals as decimal strings.
+
+Each page request has its own snapshot and UTC `meta.snapshot_at`.
+Use a stable dataset throughout retrieval when the combined export
+needs to represent one consistent view.
+
 ### Admin user, role, and permission endpoints
 
 | Method | Endpoint | Operation |
