@@ -323,6 +323,50 @@ limit is 50 entries. Set `ORDERS_SYSTEM_ACTIVITY_LIMIT` to a value from
 1 to 200. Notes, status history, and assignment history are still
 available in their respective fields.
 
+### Order notifications
+
+The current assignee receives an in-app notification when an order is assigned
+to them, confirmed, or cancelled. An initial assignment on order creation also
+counts. The assignee must be active and still have access to the assigned order
+at delivery and when reading notifications.
+
+All notification endpoints require a Sanctum Bearer token.
+
+| Method | Endpoint | Operation |
+| --- | --- | --- |
+| GET | /api/notifications | List your notifications, newest first |
+| GET | /api/notifications/unread-count | Get your current unread count |
+| PATCH | /api/notifications/{notification}/read | Mark one notification as read |
+| PATCH | /api/notifications/read-all | Mark all currently visible unread notifications as read |
+
+The list supports `status=read` or `status=unread` and the `page` and `per_page`
+parameters. It defaults to 25 results per page with a maximum of 100. Configure
+those limits with `PAGINATION_NOTIFICATIONS_DEFAULT_PER_PAGE` and
+`PAGINATION_NOTIFICATIONS_MAX_PER_PAGE`. Each entry includes its event type,
+order ID, order number, creation time, and nullable read time. Repeating a read
+request preserves the original read time.
+
+Run migrations, the queue worker, and the scheduler for local delivery with the
+default `QUEUE_CONNECTION=database`. Run the worker and scheduler in separate
+terminals.
+
+```sh
+php artisan migrate
+php artisan queue:work --queue=notifications,default
+php artisan schedule:work
+```
+
+An order write records the notification event in the same transaction and queues
+delivery after commit. The scheduler scans for due events every minute so a
+failed dispatch or worker can be retried. To run a recovery pass manually, use
+`php artisan oms:notifications:recover`. Retries preserve one notification per
+event and recipient.
+
+Set `ORDER_NOTIFICATIONS_QUEUE` to change the queue name and update the worker's
+queue list accordingly. The recovery delay and batch size default to 60 seconds
+and 100 events. Job delivery defaults to 3 attempts with a 10-second backoff.
+All four settings are listed in `.env.example`.
+
 ### Dashboard
 
 | Method | Endpoint | Operation |

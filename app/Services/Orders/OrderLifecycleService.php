@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Orders;
 
+use App\Enums\OrderNotificationType;
 use App\Enums\OrderStatus;
 use App\Exceptions\Orders\OrderLifecycleContentionException;
 use App\Exceptions\Orders\OrderVersionConflictException;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Policies\OrderPolicy;
 use App\Services\Audit\AuditLogWriter;
 use App\Services\Inventory\InventoryService;
+use App\Services\Notifications\OrderNotificationOutbox;
 use App\Services\Users\AdminUserWriteLock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
@@ -35,6 +37,7 @@ final readonly class OrderLifecycleService
         private AuditLogWriter $auditLogWriter,
         private OrderService $orders,
         private ConcurrencyErrorDetector $concurrencyErrors,
+        private OrderNotificationOutbox $notificationOutbox,
     ) {}
 
     public function transition(
@@ -106,6 +109,12 @@ final readonly class OrderLifecycleService
                     $before,
                     $this->auditState($order),
                 );
+
+                match ($status) {
+                    OrderStatus::Confirmed => $this->notificationOutbox->record($order, OrderNotificationType::Confirmed),
+                    OrderStatus::Cancelled => $this->notificationOutbox->record($order, OrderNotificationType::Cancelled),
+                    default => null,
+                };
 
                 return $this->orders->find($lockedActor, (string) $order->id);
             }, attempts: $attempts);

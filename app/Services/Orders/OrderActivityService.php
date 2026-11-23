@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Orders;
 
+use App\Enums\OrderNotificationType;
 use App\Enums\OrderStatus;
 use App\Exceptions\Orders\OrderActivityContentionException;
 use App\Exceptions\Orders\OrderVersionConflictException;
@@ -12,6 +13,7 @@ use App\Models\OrderNote;
 use App\Models\User;
 use App\Policies\OrderPolicy;
 use App\Services\Audit\AuditLogWriter;
+use App\Services\Notifications\OrderNotificationOutbox;
 use App\Services\Users\AdminUserWriteLock;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -34,6 +36,7 @@ final readonly class OrderActivityService
         private AuditLogWriter $auditLogWriter,
         private OrderService $orders,
         private ConcurrencyErrorDetector $concurrencyErrors,
+        private OrderNotificationOutbox $notificationOutbox,
     ) {}
 
     public function assign(
@@ -96,6 +99,8 @@ final readonly class OrderActivityService
                     'version' => $order->version,
                 ],
             );
+
+            $this->notificationOutbox->record($order, OrderNotificationType::Assigned);
 
             return $this->orders->find($lockedActor, (string) $order->id);
         });

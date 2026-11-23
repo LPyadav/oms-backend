@@ -4,7 +4,7 @@ info:
   title: OMS Backend API
   version: '0.1.0'
   description: |
-    Order Management System health, authentication, access administration, customer management, product catalog, order, dashboard, and report endpoints.
+    Order Management System health, authentication, access administration, customer management, product catalog, order, notification, dashboard, and report endpoints.
 
     All registered API routes share a default limit of 120 requests per
     minute per client IP. Requests rejected for missing or invalid
@@ -1300,6 +1300,122 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         '503':
           $ref: '#/components/responses/OrderWriteContention'
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List visible notifications
+      description: >-
+        Returns the caller's notifications for non-deleted orders still assigned to the caller.
+        Visibility requires a current order read permission (orders.view.any or orders.view.assigned).
+        With no visible notifications, the list is empty. Results are sorted by notification ID descending.
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [read, unread] }
+          description: Filter by read status. Omit to include both statuses.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: >-
+            One-based page number. The upper bound is the platform integer limit divided by
+            the configured maximum page size, rounded down.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >-
+            Defaults to 25 notifications per page, with a maximum of 100.
+            Deployments can set PAGINATION_NOTIFICATIONS_DEFAULT_PER_PAGE and PAGINATION_NOTIFICATIONS_MAX_PER_PAGE.
+      responses:
+        '200':
+          description: A page of visible notifications and its pagination metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderNotificationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadNotificationCount
+      summary: Count visible unread notifications
+      description: >-
+        Counts all unread notifications in the same visibility scope as the notification list.
+        Returns zero when the caller has no visible unread notifications.
+      responses:
+        '200':
+          description: The visible unread notification count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderNotificationUnreadCountResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/notifications/read-all:
+    patch:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Mark all visible notifications as read
+      description: >-
+        Marks all unread notifications in the same visibility scope as the notification list.
+        Returns the number changed. Previously read notifications keep their original read timestamp.
+      responses:
+        '200':
+          description: The number of visible notifications marked as read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderNotificationsMarkedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/notifications/{notification}/read:
+    parameters:
+      - name: notification
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+        description: Notification ID.
+    patch:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark a visible notification as read
+      description: >-
+        Uses the same visibility scope as the notification list. Missing notifications and those outside the
+        caller's visibility return 404. Repeating the request preserves the original read timestamp.
+      responses:
+        '200':
+          description: The visible notification with its read timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderNotificationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /api/dashboard:
     get:
@@ -2639,6 +2755,74 @@ components:
         - $ref: '#/components/schemas/SuccessEnvelope'
         - properties:
             data: { type: 'null' }
+            meta: { type: 'null' }
+
+    OrderNotification:
+      type: object
+      additionalProperties: false
+      required: [id, event_type, order_id, order_number, read_at, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        event_type: { type: string, enum: [order.assigned, order.confirmed, order.cancelled] }
+        order_id: { type: integer, format: int64, minimum: 1 }
+        order_number: { type: string }
+        read_at:
+          type: [string, 'null']
+          format: date-time
+          description: Timestamp when the recipient first marked the notification as read. Null while unread.
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the notification was delivered to the recipient's inbox.
+
+    OrderNotificationListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [notifications]
+              properties:
+                notifications:
+                  type: array
+                  items: { $ref: '#/components/schemas/OrderNotification' }
+            meta: { $ref: '#/components/schemas/PaginationMeta' }
+
+    OrderNotificationUnreadCountResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [unread_count]
+              properties:
+                unread_count: { type: integer, minimum: 0 }
+            meta: { type: 'null' }
+
+    OrderNotificationsMarkedResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [marked_count]
+              properties:
+                marked_count: { type: integer, minimum: 0 }
+            meta: { type: 'null' }
+
+    OrderNotificationResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - properties:
+            data:
+              type: object
+              additionalProperties: false
+              required: [notification]
+              properties:
+                notification: { $ref: '#/components/schemas/OrderNotification' }
             meta: { type: 'null' }
 
     ProductMetadataFields:

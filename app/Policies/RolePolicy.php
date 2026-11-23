@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\User;
-use Spatie\Permission\Guard;
 
-final class RolePolicy
+final readonly class RolePolicy
 {
+    public function __construct(private AdminAuthorization $authorization) {}
+
     public function viewAny(User $actor): bool
     {
         return $this->canManageRoles($actor);
@@ -31,13 +32,6 @@ final class RolePolicy
 
     private function canManageRoles(User $actor): bool
     {
-        if (! $actor->is_active) {
-            return false;
-        }
-
-        $guardName = Guard::getDefaultName($actor);
-
-        return $actor->hasRole('admin', $guardName)
-            && $actor->checkPermissionTo('roles.manage', $guardName);
+        return $this->authorization->allows($actor, 'roles.manage');
     }
 }
