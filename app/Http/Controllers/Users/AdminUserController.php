@@ -89,11 +89,9 @@ final class AdminUserController extends Controller
         string $user,
         UserRoleAssignmentService $userRoleAssignmentService,
     ): JsonResponse {
-        $actor = $this->actor($request);
-        $target = User::query()->findOrFail($user);
         $updated = $userRoleAssignmentService->replaceRoles(
-            actor: $actor,
-            target: $target,
+            actor: $this->actor($request),
+            target: $user,
             roleNames: $request->roleNames(),
         );
 

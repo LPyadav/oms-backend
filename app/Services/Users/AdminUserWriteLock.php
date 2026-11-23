@@ -23,7 +23,10 @@ final class AdminUserWriteLock
     }
 
     /**
-     * Keep the acting Admin's access stable during a write to another domain.
+     * Keep the current actor's access stable during a write in another domain.
+     *
+     * Lock the Admin role before the actor row to follow the same lock order
+     * as exclusive access changes.
      */
     public function acquireShared(User $actor): User
     {

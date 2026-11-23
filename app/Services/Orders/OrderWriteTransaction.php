@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Orders;
 
+use App\Enums\OrderWriteOperation;
+use App\Exceptions\Orders\OrderActivityContentionException;
+use App\Exceptions\Orders\OrderLifecycleContentionException;
 use App\Exceptions\Orders\OrderWriteContentionException;
 use Closure;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
@@ -26,26 +29,45 @@ final readonly class OrderWriteTransaction
      * @param  Closure(): TResult  $operation
      * @return TResult
      */
-    public function run(Closure $operation): mixed
+    public function run(Closure $operation, OrderWriteOperation $writeOperation = OrderWriteOperation::Crud): mixed
     {
         $attempts = Config::integer('orders.write_attempts');
         if ($attempts < 1) {
-            throw new LogicException('Order writes require at least one transaction attempt.');
+            throw new LogicException(match ($writeOperation) {
+                OrderWriteOperation::Crud => 'Order writes require at least one transaction attempt.',
+                OrderWriteOperation::Lifecycle => 'Order status writes require at least one transaction attempt.',
+                OrderWriteOperation::Activity => 'Order activity writes require at least one transaction attempt.',
+            });
         }
 
         try {
             return DB::transaction($operation, attempts: $attempts);
         } catch (PDOException $exception) {
-            if (! $this->concurrencyErrors->causedByConcurrencyError($exception->getPrevious() ?? $exception)) {
+            $cause = $writeOperation === OrderWriteOperation::Crud
+                ? $exception->getPrevious() ?? $exception
+                : $exception;
+            if (! $this->concurrencyErrors->causedByConcurrencyError($cause)) {
                 throw $exception;
             }
 
             $requestId = Str::uuid()->toString();
-            Log::warning('Order write could not acquire its database locks.', [
-                'request_id' => $requestId,
-            ]);
+            [$message, $contention] = match ($writeOperation) {
+                OrderWriteOperation::Crud => [
+                    'Order write could not acquire its database locks.',
+                    new OrderWriteContentionException($requestId),
+                ],
+                OrderWriteOperation::Lifecycle => [
+                    'Order status change could not acquire its database locks.',
+                    new OrderLifecycleContentionException($requestId),
+                ],
+                OrderWriteOperation::Activity => [
+                    'Order activity could not acquire its database locks.',
+                    new OrderActivityContentionException($requestId),
+                ],
+            };
+            Log::warning($message, ['request_id' => $requestId]);
 
-            throw new OrderWriteContentionException($requestId);
+            throw $contention;
         }
     }
 }

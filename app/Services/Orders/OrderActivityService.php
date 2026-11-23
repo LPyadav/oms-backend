@@ -6,7 +6,7 @@ namespace App\Services\Orders;
 
 use App\Enums\OrderNotificationType;
 use App\Enums\OrderStatus;
-use App\Exceptions\Orders\OrderActivityContentionException;
+use App\Enums\OrderWriteOperation;
 use App\Exceptions\Orders\OrderVersionConflictException;
 use App\Models\Order;
 use App\Models\OrderNote;
@@ -15,17 +15,10 @@ use App\Policies\OrderPolicy;
 use App\Services\Audit\AuditLogWriter;
 use App\Services\Notifications\OrderNotificationOutbox;
 use App\Services\Users\AdminUserWriteLock;
-use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use LogicException;
-use PDOException;
 use RuntimeException;
 
 final readonly class OrderActivityService
@@ -34,8 +27,8 @@ final readonly class OrderActivityService
         private OrderPolicy $policy,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
-        private OrderService $orders,
-        private ConcurrencyErrorDetector $concurrencyErrors,
+        private OrderReader $orders,
+        private OrderWriteTransaction $writeTransaction,
         private OrderNotificationOutbox $notificationOutbox,
     ) {}
 
@@ -49,7 +42,7 @@ final readonly class OrderActivityService
             throw new AuthorizationException;
         }
 
-        return $this->write(function () use ($actor, $orderId, $assigneeId, $expectedVersion): Order {
+        return $this->writeTransaction->run(function () use ($actor, $orderId, $assigneeId, $expectedVersion): Order {
             $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->policy->assign($lockedActor)) {
                 throw new AuthorizationException;
@@ -103,7 +96,7 @@ final readonly class OrderActivityService
             $this->notificationOutbox->record($order, OrderNotificationType::Assigned);
 
             return $this->orders->find($lockedActor, (string) $order->id);
-        });
+        }, OrderWriteOperation::Activity);
     }
 
     public function addNote(User $actor, string $orderId, string $body): OrderNote
@@ -119,7 +112,7 @@ final readonly class OrderActivityService
             ]);
         }
 
-        return $this->write(function () use ($actor, $orderId, $body): OrderNote {
+        return $this->writeTransaction->run(function () use ($actor, $orderId, $body): OrderNote {
             $lockedActor = $this->writeLock->acquireShared($actor);
             if (! $this->policy->addNote($lockedActor)) {
                 throw new AuthorizationException;
@@ -149,7 +142,7 @@ final readonly class OrderActivityService
             );
 
             return $note->load('author:id,name');
-        });
+        }, OrderWriteOperation::Activity);
     }
 
     private function activeAssignee(int $assigneeId): User
@@ -162,32 +155,5 @@ final readonly class OrderActivityService
         }
 
         return $assignee;
-    }
-
-    /**
-     * @template TResult
-     *
-     * @param  Closure(): TResult  $operation
-     * @return TResult
-     */
-    private function write(Closure $operation): mixed
-    {
-        $attempts = Config::integer('orders.write_attempts');
-        if ($attempts < 1) {
-            throw new LogicException('Order activity writes require at least one transaction attempt.');
-        }
-
-        try {
-            return DB::transaction($operation, attempts: $attempts);
-        } catch (PDOException $exception) {
-            if (! $this->concurrencyErrors->causedByConcurrencyError($exception)) {
-                throw $exception;
-            }
-
-            $requestId = Str::uuid()->toString();
-            Log::warning('Order activity could not acquire its database locks.', ['request_id' => $requestId]);
-
-            throw new OrderActivityContentionException($requestId);
-        }
     }
 }

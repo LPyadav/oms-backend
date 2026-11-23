@@ -7,7 +7,7 @@ namespace App\Services\Customers;
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\User;
-use App\Services\Orders\OrderService;
+use App\Services\Orders\OrderReader;
 use App\Services\Reports\OrderReportTotals;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +31,7 @@ final readonly class CustomerOrderSummaryService
 
     public function __construct(
         private CustomerService $customers,
-        private OrderService $orders,
+        private OrderReader $orders,
         private OrderReportTotals $reportTotals,
     ) {}
 
