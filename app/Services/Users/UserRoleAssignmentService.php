@@ -29,9 +29,14 @@ final readonly class UserRoleAssignmentService
     /**
      * @param  list<string>  $roleNames
      */
-    public function replaceRoles(User $actor, User $target, array $roleNames): User
+    public function replaceRoles(User $actor, User|int|string $target, array $roleNames): User
     {
-        return DB::transaction(function () use ($actor, $target, $roleNames): User {
+        $targetId = $target instanceof User ? $target->id : $target;
+        if (is_string($targetId)) {
+            $targetId = ltrim($targetId, '0') ?: '0';
+        }
+
+        return DB::transaction(function () use ($actor, $targetId, $roleNames): User {
             $guardName = Guard::getDefaultName(User::class);
             $adminRole = Role::query()
                 ->where('name', 'admin')
@@ -44,21 +49,21 @@ final readonly class UserRoleAssignmentService
             }
 
             $lockedUsers = User::query()
-                ->whereKey([$actor->id, $target->id])
+                ->whereIn('id', [$actor->id, $targetId])
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
             $lockedActor = $lockedUsers->get($actor->id);
-            $lockedTarget = $lockedUsers->get($target->id);
+            $lockedTarget = $lockedUsers->get($targetId);
 
             if (! $lockedActor instanceof User) {
                 throw new AuthorizationException;
             }
 
             if (! $lockedTarget instanceof User) {
-                throw (new ModelNotFoundException)->setModel(User::class, [$target->id]);
+                throw (new ModelNotFoundException)->setModel(User::class, [$targetId]);
             }
 
             if (! $this->userPolicy->assignRoles($lockedActor, $lockedTarget)) {

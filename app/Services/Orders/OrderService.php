@@ -45,16 +45,6 @@ use RuntimeException;
  */
 final readonly class OrderService
 {
-    private const array DETAIL_RELATIONS = [
-        'customer',
-        'assignee:id,name',
-        'items',
-        'notes.author:id,name',
-        'statusHistory.actor:id,name',
-        'assignmentHistory.actor:id,name',
-        'systemActivity.actor:id,name',
-    ];
-
     private const array AUDIT_FIELDS = [
         'order_number',
         'customer_id',
@@ -87,7 +77,7 @@ final readonly class OrderService
 
     public function __construct(
         private OrderPolicy $policy,
-        private OrderListQuery $listQuery,
+        private OrderReader $reader,
         private OrderPricingService $pricing,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
@@ -101,14 +91,12 @@ final readonly class OrderService
      */
     public function paginate(User $actor, array $criteria): LengthAwarePaginator
     {
-        return $this->listQuery->paginate($this->visibleOrders($actor), $criteria, $actor);
+        return $this->reader->paginate($actor, $criteria);
     }
 
     public function find(User $actor, string $orderId): Order
     {
-        return DB::transaction(fn (): Order => $this->visibleOrders($actor)
-            ->with(self::DETAIL_RELATIONS)
-            ->findOrFail($orderId));
+        return $this->reader->find($actor, $orderId);
     }
 
     /**
@@ -172,7 +160,7 @@ final readonly class OrderService
             }
 
             if ($creationKey->order_id !== null) {
-                return Order::query()->with(self::DETAIL_RELATIONS)->findOrFail($creationKey->order_id);
+                return Order::query()->with(OrderReader::DETAIL_RELATIONS)->findOrFail($creationKey->order_id);
             }
 
             $assigneeId = $data['assignee_id'] ?? null;
@@ -232,7 +220,7 @@ final readonly class OrderService
                 throw new RuntimeException('The order creation result could not be recorded.');
             }
 
-            return $order->loadMissing(self::DETAIL_RELATIONS);
+            return $order->loadMissing(OrderReader::DETAIL_RELATIONS);
         });
     }
 
@@ -260,7 +248,7 @@ final readonly class OrderService
             $updatedItems = $this->reprice($order, $data);
 
             if (! $order->isDirty() && $updatedItems === null) {
-                return $order->loadMissing(self::DETAIL_RELATIONS);
+                return $order->loadMissing(OrderReader::DETAIL_RELATIONS);
             }
 
             $this->advanceVersion($order);
@@ -282,7 +270,7 @@ final readonly class OrderService
                 $this->snapshot($order),
             );
 
-            return $order->loadMissing(self::DETAIL_RELATIONS);
+            return $order->loadMissing(OrderReader::DETAIL_RELATIONS);
         });
     }
 
@@ -328,16 +316,7 @@ final readonly class OrderService
      */
     public function visibleOrders(User $actor): Builder
     {
-        if (! $this->policy->viewAny($actor)) {
-            throw new AuthorizationException;
-        }
-
-        $query = Order::query();
-        if (! $this->policy->viewAll($actor)) {
-            $query->where('assignee_id', $actor->id);
-        }
-
-        return $query;
+        return $this->reader->visibleOrders($actor);
     }
 
     /**

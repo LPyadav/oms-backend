@@ -178,7 +178,7 @@ final class AdminUserManagementTest extends TestCase
             ->assertJsonPath('errors.code', ApiErrorCode::AUTH_UNAUTHENTICATED);
     }
 
-    public function test_admin_receives_not_found_for_a_missing_update_or_disable_target(): void
+    public function test_admin_receives_not_found_for_a_missing_user_write_target(): void
     {
         $this->authenticateAs('admin');
         $endpoint = self::ENDPOINT.'/999999';
@@ -188,6 +188,10 @@ final class AdminUserManagementTest extends TestCase
             ->assertJsonPath('errors.code', ApiErrorCode::RESOURCE_NOT_FOUND);
 
         $this->patchJson($endpoint.'/disable')
+            ->assertNotFound()
+            ->assertJsonPath('errors.code', ApiErrorCode::RESOURCE_NOT_FOUND);
+
+        $this->patchJson(self::ENDPOINT.'/'.PHP_INT_MAX.'0/roles', ['roles' => ['staff']])
             ->assertNotFound()
             ->assertJsonPath('errors.code', ApiErrorCode::RESOURCE_NOT_FOUND);
     }
@@ -287,6 +291,17 @@ final class AdminUserManagementTest extends TestCase
         self::assertSame([
             'roles' => [['id' => $manager->id, 'name' => 'manager']],
         ], $audit->after_values);
+    }
+
+    public function test_admin_can_replace_roles_using_a_zero_padded_target_id(): void
+    {
+        $this->authenticateAs('admin');
+        $target = User::factory()->create()->assignRole('staff');
+
+        $this->patchJson(self::ENDPOINT.'/0'.$target->id.'/roles', ['roles' => ['manager']])
+            ->assertOk()
+            ->assertJsonPath('data.user.id', $target->id)
+            ->assertJsonPath('data.user.roles', ['manager']);
     }
 
     public function test_admin_cannot_submit_a_json_object_as_roles(): void
