@@ -7,6 +7,7 @@ namespace App\Services\Orders;
 use App\Enums\OrderPriority;
 use App\Enums\OrderSortField;
 use App\Enums\OrderStatus;
+use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
@@ -143,26 +144,32 @@ final class OrderListQuery
     private function applySearch(Builder $query, string $search, OrderCustomerContactScope $contactScope): void
     {
         $pattern = '%'.strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
+        $matchingCustomerIds = Customer::query()
+            ->select('customers.id')
+            ->whereRaw("customers.name like ? escape '!'", [$pattern]);
 
-        $query->where(static function (Builder $matches) use ($pattern, $contactScope): void {
+        if ($contactScope->viewAll) {
+            $matchingCustomerIds->orWhereRaw("customers.email like ? escape '!'", [$pattern]);
+        }
+
+        $query->where(static function (Builder $matches) use ($pattern, $matchingCustomerIds, $contactScope): void {
+            // Independent ID lookups let the database reuse each set of matches.
             $matches->whereRaw("orders.order_number like ? escape '!'", [$pattern])
-                ->orWhereHas('customer', static function (Builder $customer) use ($pattern, $contactScope): void {
-                    $customer->where(static function (Builder $fields) use ($pattern, $contactScope): void {
-                        $fields->whereRaw("customers.name like ? escape '!'", [$pattern]);
-
-                        if ($contactScope->viewAll) {
-                            $fields->orWhereRaw("customers.email like ? escape '!'", [$pattern]);
-                        } elseif ($contactScope->assignedActorId !== null) {
-                            $fields->orWhere(static fn (Builder $email): Builder => $email
-                                ->where('orders.assignee_id', $contactScope->assignedActorId)
-                                ->whereRaw("customers.email like ? escape '!'", [$pattern]));
-                        }
-                    });
-                })
-                ->orWhereHas('items', static fn (Builder $item): Builder => $item
+                ->orWhereIn('orders.customer_id', $matchingCustomerIds)
+                ->orWhereIn('orders.id', OrderItem::query()
+                    ->select('order_items.order_id')
                     ->whereRaw("(order_items.product_name like ? escape '!' or order_items.product_sku like ? escape '!')", [$pattern, $pattern]))
-                ->orWhereHas('assignee', static fn (Builder $assignee): Builder => $assignee
+                ->orWhereIn('orders.assignee_id', User::query()
+                    ->select('users.id')
                     ->whereRaw("users.name like ? escape '!'", [$pattern]));
+
+            if (! $contactScope->viewAll && $contactScope->assignedActorId !== null) {
+                $matches->orWhere(static fn (Builder $email): Builder => $email
+                    ->where('orders.assignee_id', $contactScope->assignedActorId)
+                    ->whereIn('orders.customer_id', Customer::query()
+                        ->select('customers.id')
+                        ->whereRaw("customers.email like ? escape '!'", [$pattern])));
+            }
         });
     }
 

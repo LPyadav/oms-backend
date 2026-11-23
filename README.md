@@ -240,11 +240,19 @@ and from 433.2 to 91.3 ms p95 across 10 samples per query. These timings
 cover the page SELECT. Its plan scanned 40,000 index entries and loaded
 100 full order rows.
 
-An earlier 50,000-order fixture with 250,000 item snapshots measured a
-no-match substring search at 5.30 s p50 and 35.85 s p95 across 12 local
-API requests, with most of the time spent counting matches. For a known
-identifier, use the indexed `order_number` or `sku` filter. Narrow
-substring searches with the relevant status, assignee or date filters.
+An earlier HTTP benchmark with 50,000 orders and 250,000 item snapshots
+recorded 5.30 s p50 and 35.85 s p95 for a no-match substring across 12
+local requests. A separate paired listing-service run on MySQL 8.2.0
+used the same fixture size and five timed samples per version. No-match
+latency moved from 5.50 s p50 and 8.83 s p95 to 2.08 s p50 and
+4.17 s p95. A rare item-snapshot match moved from 36.89 s to 8.85 s
+p50 across three timed samples, with 25.58 s as the slowest candidate
+sample. The paired timings cover the listing service and database.
+
+Substring search uses independent customer, item and assignee ID queries
+so the database can reuse each set of matches. Broad substrings still
+scan searchable data. For a known identifier, use the indexed
+`order_number` or `sku` filter.
 
 Order writes accept JSON. Send an active customer ID, an order date, and a
 non-empty list of distinct product IDs and positive quantities to create a
