@@ -620,6 +620,26 @@ JavaScript on the same origin can read the stored token. An XSS flaw
 could expose it until expiry or revocation. Use HTTPS in production to
 protect the token in transit.
 
+### Self-service password recovery
+
+Configure `AUTH_PASSWORD_RESET_FRONTEND_URL` to the Vue origin. Use HTTPS in
+production and keep the queue asynchronous, with a worker serving the default
+queue. Configure Laravel mail for an SMTP server or a local mail catcher.
+The development log mailer writes reset links to local logs. Use a delivery
+mailer outside local development.
+
+| Method | Endpoint | Behavior |
+| --- | --- | --- |
+| POST | /api/forgot-password | Accepts an email and returns the same `202` whether or not an active account exists. |
+| POST | /api/reset-password | Accepts the emailed token, email, password and confirmation. Consumes a valid link and revokes the account's bearer tokens. |
+
+The link expires after 60 minutes. It uses a URL fragment on the configured
+frontend origin. The frontend reads the fragment and sends credentials only
+in the reset request body. Use **Forgot password?** on the sign-in page to
+verify delivery and reset with a test account. After resetting, check that
+sign-in works with the new password and an earlier session can no longer call
+`/api/me`.
+
 ## Verify the authentication flow
 
 Use an existing local development user, or create one from `php artisan tinker`.
@@ -680,6 +700,10 @@ the same health response through the Vite proxy.
 | `RATE_LIMIT_API_PER_IP` | 120 per minute | Shared IP quota across registered API routes |
 | `RATE_LIMIT_LOGIN_PER_IP` | 30 per minute | Additional login quota for the client IP |
 | `RATE_LIMIT_LOGIN_PER_EMAIL` | 5 per minute | Additional login quota for the normalized email, across IPs |
+| `RATE_LIMIT_PASSWORD_LINK_PER_IP` | 10 per minute | Additional link requests for the client IP |
+| `RATE_LIMIT_PASSWORD_LINK_PER_EMAIL` | 3 per minute | Additional link requests for the normalized email, across IPs |
+| `RATE_LIMIT_PASSWORD_RESET_PER_IP` | 15 per minute | Additional reset submissions for the client IP |
+| `RATE_LIMIT_PASSWORD_RESET_PER_EMAIL` | 5 per minute | Additional reset submissions for the normalized email, across IPs |
 | `RATE_LIMIT_PASSWORD_CHANGE_PER_ACCOUNT` | 6 requests | Additional password change quota for each authenticated account |
 | `RATE_LIMIT_PASSWORD_CHANGE_WINDOW_MINUTES` | 1 minute | Window for the account password change quota |
 

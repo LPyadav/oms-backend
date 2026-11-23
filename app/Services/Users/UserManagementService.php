@@ -14,6 +14,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use SensitiveParameter;
@@ -117,6 +118,7 @@ final readonly class UserManagementService
                 $normalizedEmail = LoginEmail::normalize($email);
 
                 if (LoginEmail::normalize($target->email) !== $normalizedEmail) {
+                    Password::deleteToken($target);
                     $target->email_verified_at = null;
                 }
 

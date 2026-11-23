@@ -20,7 +20,9 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
     public function boot(): void
     {
         RateLimiter::for('api', $this->apiLimit(...));
-        RateLimiter::for('login', $this->loginLimits(...));
+        RateLimiter::for('login', fn (Request $request): array => $this->publicAuthLimits($request, 'login'));
+        RateLimiter::for('password-link', fn (Request $request): array => $this->publicAuthLimits($request, 'password_link'));
+        RateLimiter::for('password-reset', fn (Request $request): array => $this->publicAuthLimits($request, 'password_reset'));
         RateLimiter::for('password-change', $this->passwordChangeLimit(...));
     }
 
@@ -36,12 +38,13 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
     /**
      * @return list<Limit>
      */
-    private function loginLimits(Request $request): array
+    private function publicAuthLimits(Request $request, string $action): array
     {
+        $bucket = str_replace('_', '-', $action);
         $limits = [
             $this->limitFor(
-                'rate_limits.login.per_ip',
-                'login-ip',
+                "rate_limits.{$action}.per_ip",
+                "{$bucket}-ip",
                 $this->clientIp($request),
             ),
         ];
@@ -55,8 +58,8 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
 
         if ($email !== '' && strlen($email) <= self::MAX_EMAIL_INPUT_BYTES) {
             $limits[] = $this->limitFor(
-                'rate_limits.login.per_email',
-                'login-email',
+                "rate_limits.{$action}.per_email",
+                "{$bucket}-email",
                 LoginEmail::normalize($email),
             );
         }

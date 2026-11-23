@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('oms:notifications:recover')->everyMinute();
+Schedule::command('auth:clear-resets')->hourly();

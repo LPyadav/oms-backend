@@ -12,6 +12,7 @@ use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Support\Timebox;
 use Illuminate\Validation\ValidationException;
@@ -148,6 +149,7 @@ final readonly class AuthenticationService
             $account->password = $this->hasher->make($newPassword);
             $account->saveOrFail();
             $account->tokens()->delete();
+            Password::deleteToken($account);
         });
     }
 

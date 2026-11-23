@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Audit\AccessAuditLogController;
 use App\Http\Controllers\Audit\OperationalAuditController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\PasswordRecoveryController;
 use App\Http\Controllers\Customers\CustomerController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Notifications\OrderNotificationController;
@@ -28,6 +29,14 @@ Route::get('/health', static function (ApiResponse $apiResponse): JsonResponse {
 Route::post('/login', [AuthController::class, 'login'])
     ->middleware('throttle:login')
     ->name('auth.login');
+
+Route::post('/forgot-password', [PasswordRecoveryController::class, 'requestLink'])
+    ->middleware('throttle:password-link')
+    ->name('auth.password.email');
+
+Route::post('/reset-password', [PasswordRecoveryController::class, 'reset'])
+    ->middleware('throttle:password-reset')
+    ->name('auth.password.reset');
 
 Route::middleware('auth:sanctum')->group(static function (): void {
     Route::post('/logout', [AuthController::class, 'logout'])

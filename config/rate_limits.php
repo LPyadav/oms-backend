@@ -30,6 +30,14 @@ return [
         'per_email' => $positiveInteger('RATE_LIMIT_LOGIN_PER_EMAIL', 5),
     ],
 
+    'password_link' => [
+        'per_ip' => $positiveInteger('RATE_LIMIT_PASSWORD_LINK_PER_IP', 10),
+        'per_email' => $positiveInteger('RATE_LIMIT_PASSWORD_LINK_PER_EMAIL', 3),
+    ],
+    'password_reset' => [
+        'per_ip' => $positiveInteger('RATE_LIMIT_PASSWORD_RESET_PER_IP', 15),
+        'per_email' => $positiveInteger('RATE_LIMIT_PASSWORD_RESET_PER_EMAIL', 5),
+    ],
     'password_change' => [
         'per_account' => $positiveInteger('RATE_LIMIT_PASSWORD_CHANGE_PER_ACCOUNT', 6),
         'window_minutes' => $positiveInteger('RATE_LIMIT_PASSWORD_CHANGE_WINDOW_MINUTES', 1),

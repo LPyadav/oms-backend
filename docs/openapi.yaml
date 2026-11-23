@@ -81,6 +81,74 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/forgot-password:
+    post:
+      tags: [Authentication]
+      operationId: requestPasswordResetLink
+      summary: Request a password reset link
+      description: Queues a request for any valid email. Active, inactive, unknown, and broker-throttled accounts receive the same response.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+      responses:
+        '202':
+          description: Password recovery request accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/reset-password:
+    post:
+      tags: [Authentication]
+      operationId: resetPassword
+      summary: Set a new password using an emailed token
+      description: Consumes a valid link and revokes all bearer tokens for the account. An invalid or expired link returns a validation error on token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token, password, password_confirmation]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                token: { type: string, maxLength: 255, writeOnly: true }
+                password:
+                  type: string
+                  format: password
+                  maxLength: 1024
+                  writeOnly: true
+                  description: Uses the Laravel password policy and the 72-byte limit when bcrypt is configured.
+                password_confirmation: { type: string, format: password, writeOnly: true }
+      responses:
+        '200':
+          description: Password reset and account bearer tokens revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessEnvelope'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/me:
     get:
       tags: [Authentication]
