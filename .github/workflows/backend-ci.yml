@@ -1,0 +1,57 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Laravel checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      APP_ENV: testing
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP and Composer
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.5'
+          extensions: bcmath, mbstring, pdo_mysql, pdo_sqlite
+          tools: composer:v2
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Generate a test application key
+        run: |
+          app_key="$(php artisan key:generate --show --no-interaction)"
+          echo "::add-mask::$app_key"
+          printf 'APP_KEY=%s\n' "$app_key" >> "$GITHUB_ENV"
+
+      - name: Run formatting, static analysis, and SQLite tests
+        run: composer check
+
+      - name: Start the runner's local MySQL service
+        run: sudo systemctl start mysql.service
+
+      - name: Run isolated MySQL regressions
+        env:
+          OMS_MYSQL_ADMIN_PASSWORD: root
+        run: php tests/run-mysql.php
