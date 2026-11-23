@@ -25,6 +25,7 @@ return [
         'last_active_admin' => 'At least one active Admin must remain.',
         'permissions_retrieved' => 'User permissions retrieved successfully.',
         'permissions_updated' => 'Direct user permissions updated successfully.',
+        'admin_only_permissions' => 'These permissions can only be added to users with the built-in Admin role: :permissions.',
     ],
 
     'access_audit' => [
