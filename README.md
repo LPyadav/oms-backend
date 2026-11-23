@@ -622,11 +622,14 @@ protect the token in transit.
 
 ### Self-service password recovery
 
-Configure `AUTH_PASSWORD_RESET_FRONTEND_URL` to the Vue origin. Use HTTPS in
-production and keep the queue asynchronous, with a worker serving the default
-queue. Configure Laravel mail for an SMTP server or a local mail catcher.
-The development log mailer writes reset links to local logs. Use a delivery
-mailer outside local development.
+Set `AUTH_PASSWORD_RESET_FRONTEND_URL` to the Vue origin in backend `.env`.
+The default `MAIL_MAILER=log` writes the reset link to
+`storage/logs/laravel.log` with the sample logging configuration.
+For inbox delivery, configure SMTP. Run a queue worker that serves
+`default`, for example `php artisan queue:work --queue=notifications,default`.
+
+See the [password recovery setup guide](docs/password-recovery.md) for
+local testing, SMTP settings, and worker restart steps.
 
 | Method | Endpoint | Behavior |
 | --- | --- | --- |
