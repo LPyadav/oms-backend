@@ -14,7 +14,7 @@ final class OrderAssigneeLookup
      */
     public function paginate(?string $search, int $page, int $perPage): LengthAwarePaginator
     {
-        $query = User::query()->where('is_active', true);
+        $query = User::query()->with('roles:id,name,guard_name')->where('is_active', true);
 
         if ($search !== null) {
             $pattern = '%'.strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
@@ -23,6 +23,6 @@ final class OrderAssigneeLookup
 
         return $query->orderByRaw('lower(name)')
             ->orderBy('id')
-            ->paginate(perPage: $perPage, columns: ['id', 'name'], page: $page);
+            ->paginate(perPage: $perPage, columns: ['id', 'name', 'email'], page: $page);
     }
 }

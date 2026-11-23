@@ -311,8 +311,9 @@ review the change before retrying.
 
 Use `GET /api/orders/assignees` to populate the assignee selector. The
 caller must be active and have `orders.view.any` and `orders.assign`.
-The lookup lists active users by name ignoring case, then by ID. Each entry in
-`data.assignees` contains only `id` and `name`.
+The lookup lists active users by name ignoring case, then by ID. Each entry
+includes `id`, `name`, `email`, and the sorted names of assigned roles.
+Users without roles have an empty role list.
 
 Pass an optional `search` query parameter to match a literal substring
 of the name, ignoring case. Leading and trailing whitespace is trimmed,
@@ -328,6 +329,11 @@ new assignees within the write transaction.
 Assignment takes assignee_id and expected_version. Supply null to unassign.
 Changes require an active assignee and an eligible order. Assignment history
 shows the old and new assignee IDs, acting user, and time.
+
+Order detail and full order write responses include the current assignee email
+and roles for callers with both `orders.view.any` and `orders.assign`.
+Other viewers and order lists receive the assignee ID and name. An unassigned
+order has `assignee: null`.
 
 To append a note, send body as JSON. The server records the authenticated
 author. Staff with assigned-note permission can add notes to their own
