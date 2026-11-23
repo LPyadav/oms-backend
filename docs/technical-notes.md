@@ -65,6 +65,11 @@ create, assign, and confirm an order and check the stock movement. As the
 assigned Staff user, advance the order and open its notification. As Manager,
 complete it and verify the Sales & Tax totals.
 
+Use a separate Staff-assigned order for cancellation. Confirm it, record an
+independent Admin stock adjustment, and cancel as Manager. Check that the
+original deduction is restored once. Verify the stock movements, status
+history, audit entry, and assigned Staff user's cancellation notification.
+
 The G4 fresh-clone walkthrough used backend
 [`9b6aa08`](https://github.com/LPyadav/oms-backend/commit/9b6aa08a0db0a763ca634c40646490c552ebd964)
 and frontend
@@ -75,6 +80,23 @@ reported no findings for that pair. The later backend release fix
 [`00be732`](https://github.com/LPyadav/oms-backend/commit/00be732b209eb17560e55682068c9c732f2c9760)
 passed two logging regression tests, Pint, PHPStan level 8, and strict OpenAPI
 validation. Redocly and Laravel route comparison matched all 53 API operations.
+
+On 23 November 2026, a fresh backend clone at
+[`b87499f`](https://github.com/LPyadav/oms-backend/commit/b87499f3c12eff99a5d4ef2ca8adbb3552dcb5c0)
+passed the API smoke on isolated MySQL 8.2.0. All 27 migrations applied.
+The demo commands created 5 users, 100 customers, 50 products, 504 orders,
+and 1,008 order items. The database worker delivered 936 unique notifications
+with zero pending or failed jobs. All 37 live HTTP checks passed, covering
+three-role access, bearer login and logout, notifications, and report totals.
+
+On the same date, a live cancellation run at backend `c157e7b` passed 14 HTTP
+checks on isolated MySQL 8.2.0. Confirming a five-unit order reduced stock
+from 100 to 95. An Admin adjustment set stock to 80. Manager cancellation
+restored five units, leaving 85. MySQL recorded one deduction, one reversal,
+and three matching status history and status audit rows. A stale cancellation
+returned HTTP 409 and a repeated cancellation returned HTTP 422 without
+additional writes. The worker delivered the assignment, confirmation, and
+cancellation notifications once each to the assigned Staff user.
 
 ## AI assistance and review
 
