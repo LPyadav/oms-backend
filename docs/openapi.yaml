@@ -204,6 +204,7 @@ paths:
   /api/admin/users/{user}:
     get:
       tags: [Admin Users]
+      operationId: getAdminUser
       summary: Get one user for the account editor
       parameters:
         - name: user
@@ -219,6 +220,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/ResourceNotFound' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
     patch:
       tags: [Admin Users]
       operationId: updateAdminUser
@@ -1888,6 +1891,7 @@ paths:
   /api/me/password:
     patch:
       tags: [Authentication]
+      operationId: changeCurrentUserPassword
       summary: Change the current account password and revoke its API tokens
       description: The replacement must differ from the current password. An account-specific rate limit applies.
       requestBody:
@@ -1898,9 +1902,19 @@ paths:
               type: object
               required: [current_password, password, password_confirmation]
               properties:
-                current_password: { type: string, format: password }
-                password: { type: string, format: password }
-                password_confirmation: { type: string, format: password }
+                current_password: { type: string, format: password, minLength: 1, maxLength: 1024 }
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  maxLength: 1024
+                  description: >-
+                    Must differ from the current password and must not contain a NUL byte.
+                    With bcrypt, the limit is 72 bytes or the configured bcrypt limit if lower.
+                password_confirmation:
+                  type: string
+                  format: password
+                  description: Must exactly match the new password.
       responses:
         '200':
           description: Password changed. Sign in again with the new password.
@@ -1910,10 +1924,12 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /api/customers/{customer}/order-summary:
     get:
       tags: [Customers]
+      operationId: getCustomerOrderSummary
       summary: Get a customer's order counts, lifetime values, and recent orders
       parameters:
         - name: customer
@@ -1929,10 +1945,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/ResourceNotFound' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /api/admin/access-audit-logs:
     get:
       tags: [Audit]
+      operationId: listAccessAuditLogs
       summary: List access audit records, newest first
       parameters:
         - { name: action, in: query, schema: { type: string, maxLength: 64 } }
@@ -1953,10 +1972,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /api/admin/access-audit-logs/{log}:
     get:
       tags: [Audit]
+      operationId: getAccessAuditLog
       summary: Get one access audit record
       parameters:
         - { name: log, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -1969,10 +1991,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/ResourceNotFound' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /api/admin/audit-logs:
     get:
       tags: [Audit]
+      operationId: listOperationalAuditLogs
       summary: List operational audit records, newest first
       parameters:
         - { name: action, in: query, schema: { type: string, maxLength: 64 } }
@@ -1995,10 +2020,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /api/admin/audit-logs/{log}:
     get:
       tags: [Audit]
+      operationId: getOperationalAuditLog
       summary: Get one operational audit record
       parameters:
         - { name: log, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -2011,6 +2039,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/ResourceNotFound' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
 components:
   securitySchemes:
