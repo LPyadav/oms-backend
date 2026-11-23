@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Exceptions\ApiExceptionRenderer;
+use App\Exceptions\ApiExceptionReporter;
 use App\Exceptions\Auth\InvalidCredentialsException;
 use Illuminate\Auth\Middleware\Authorize;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
@@ -19,7 +20,6 @@ use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Routing\Middleware\ThrottleRequestsWithRedis;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -61,16 +61,23 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->dontReport(InvalidCredentialsException::class);
 
-        $exceptions->report(static function (PDOException $exception): void {
-            $sqlState = $exception->errorInfo[0] ?? (string) $exception->getCode();
+        $exceptions->report(static function (Throwable $exception): ?bool {
+            $request = app()->bound('request') ? app('request') : null;
 
-            app(LoggerInterface::class)->error('A database operation failed.', [
-                'exception_type' => $exception::class,
-                'sqlstate' => is_string($sqlState) && preg_match('/\A[A-Z0-9]{5}\z/', $sqlState) === 1
-                    ? $sqlState
-                    : null,
-            ]);
-        })->stop();
+            if ($request instanceof Request && $request->is('api', 'api/*')) {
+                app(ApiExceptionReporter::class)->reportApi($request, $exception);
+
+                return false;
+            }
+
+            if ($exception instanceof PDOException) {
+                app(ApiExceptionReporter::class)->reportDatabase($exception);
+
+                return false;
+            }
+
+            return null;
+        });
 
         $exceptions->respond(static function (
             Response $response,

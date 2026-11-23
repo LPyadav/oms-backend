@@ -3651,6 +3651,11 @@ components:
 
     InternalServerError:
       description: The server could not complete the request.
+      headers:
+        X-Request-ID:
+          description: Server-generated support ID that matches meta.request_id.
+          required: true
+          schema: { type: string, format: uuid }
       content:
         application/json:
           schema:
@@ -3660,6 +3665,12 @@ components:
                   errors:
                     properties:
                       code: { const: INTERNAL_SERVER_ERROR }
+                  meta:
+                    type: object
+                    additionalProperties: false
+                    required: [request_id]
+                    properties:
+                      request_id: { type: string, format: uuid }
 
     OrderWriteContention:
       description: The write could not acquire its database locks. Wait for Retry-After before retrying.

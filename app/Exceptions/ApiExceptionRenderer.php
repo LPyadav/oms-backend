@@ -36,6 +36,7 @@ final readonly class ApiExceptionRenderer
 
     public function __construct(
         private ApiResponse $apiResponse,
+        private ApiExceptionReporter $exceptionReporter,
     ) {}
 
     public function __invoke(
@@ -120,6 +121,13 @@ final readonly class ApiExceptionRenderer
             $headers['www-authenticate'] ??= ['Bearer'];
         }
 
+        $requestId = null;
+
+        if ($status === Response::HTTP_INTERNAL_SERVER_ERROR) {
+            $requestId = $this->exceptionReporter->reportApi($request, $exception);
+            $headers['x-request-id'] = $requestId;
+        }
+
         return $this->apiResponse->error(
             message: Lang::string($messageKey),
             code: $code,
@@ -136,6 +144,7 @@ final readonly class ApiExceptionRenderer
             },
             headers: $headers,
             meta: match (true) {
+                $requestId !== null => ['request_id' => $requestId],
                 $exception instanceof StockVersionConflictException => ['stock_version' => $exception->currentStockVersion],
                 $exception instanceof OrderVersionConflictException => ['version' => $exception->currentVersion],
                 default => null,
