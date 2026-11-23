@@ -19,6 +19,7 @@ use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Routing\Middleware\ThrottleRequestsWithRedis;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -59,6 +60,17 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         $exceptions->dontReport(InvalidCredentialsException::class);
+
+        $exceptions->report(static function (PDOException $exception): void {
+            $sqlState = $exception->errorInfo[0] ?? (string) $exception->getCode();
+
+            app(LoggerInterface::class)->error('A database operation failed.', [
+                'exception_type' => $exception::class,
+                'sqlstate' => is_string($sqlState) && preg_match('/\A[A-Z0-9]{5}\z/', $sqlState) === 1
+                    ? $sqlState
+                    : null,
+            ]);
+        })->stop();
 
         $exceptions->respond(static function (
             Response $response,
