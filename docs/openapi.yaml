@@ -1069,6 +1069,43 @@ paths:
         '503':
           $ref: '#/components/responses/OrderWriteContention'
 
+  /api/orders/export:
+    get:
+      tags: [Orders]
+      operationId: exportOrdersCsv
+      summary: Export matching orders as CSV
+      description: >-
+        Requires orders.view.any. Applies the same search, filters and sorting as the Orders list, independent
+        of pagination. Exports up to 1,000 orders per request and allows five requests per account per minute.
+        A larger result returns a validation error in errors.fields.export. Customer and employee contact
+        details are omitted. Amounts use two decimal places with a separate currency column.
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: order_number, in: query, schema: { type: string, minLength: 1, maxLength: 40 } }
+        - { name: sku, in: query, schema: { type: string, minLength: 1, maxLength: 64 } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] } }
+        - { name: priority, in: query, schema: { $ref: '#/components/schemas/OrderPriority' } }
+        - { name: customer_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: assignee_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: date_from, in: query, schema: { type: string, format: date } }
+        - { name: date_to, in: query, schema: { type: string, format: date } }
+        - { name: sort, in: query, schema: { type: string, enum: [order_date, total, status, priority, customer], default: order_date } }
+        - { name: direction, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+      responses:
+        '200':
+          description: UTF-8 CSV attachment. A query with no matches returns the column headers.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
   /api/orders/preview:
     post:
       tags: [Orders]
@@ -1728,6 +1765,69 @@ paths:
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
           $ref: '#/components/responses/InternalServerError'
+
+  /api/reports/orders/export:
+    get:
+      tags: [Reports]
+      operationId: exportOrderFulfillmentCsv
+      summary: Export Order and Fulfillment rows as CSV
+      description: >-
+        Requires reports.view and orders.view.any. Uses the same filters and
+        row order as GET /api/reports/orders across all matching pages. The
+        1,000-row cap returns a validation error in errors.fields.export when
+        exceeded. CSV exports share five requests per account per minute.
+      parameters:
+        - { name: date_from, in: query, schema: { type: string, format: date }, description: 'Inclusive business order date. Supply both dates or omit both.' }
+        - { name: date_to, in: query, schema: { type: string, format: date }, description: 'Inclusive business order date. Supply both dates or omit both.' }
+        - { name: status, in: query, schema: { type: string, enum: [draft, pending, confirmed, processing, ready, completed, cancelled] } }
+        - { name: customer_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: assignee_id, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: UTF-8 order-fulfillment.csv attachment. An empty result returns the CSV headers.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
+  /api/reports/sales-tax/export:
+    get:
+      tags: [Reports]
+      operationId: exportSalesTaxCsv
+      summary: Export Sales and Tax rows as CSV
+      description: >-
+        Requires reports.view and orders.view.any. Uses the same filters and
+        row order as GET /api/reports/sales-tax across all matching pages.
+        Includes completion time in UTC and the stored full-order amounts,
+        including when a product filter is used. The 1,000-row cap returns a
+        validation error in errors.fields.export when exceeded. CSV exports
+        share five requests per account per minute.
+      parameters:
+        - { name: date_from, in: query, schema: { type: string, format: date }, description: 'Inclusive local completion date. Supply both dates or omit both.' }
+        - { name: date_to, in: query, schema: { type: string, format: date }, description: 'Inclusive local completion date. Supply both dates or omit both.' }
+        - { name: customer_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: product_id, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: UTF-8 sales-tax.csv attachment. An empty result returns the CSV headers.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /api/products:
     get:

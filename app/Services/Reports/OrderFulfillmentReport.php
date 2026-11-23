@@ -81,6 +81,15 @@ final readonly class OrderFulfillmentReport
 
     /**
      * @param  OrderFulfillmentFilters  $filters
+     * @return list<OrderFulfillmentRow>
+     */
+    public function exportRows(array $filters, int $maximumRows): array
+    {
+        return DB::transaction(fn (): array => $this->page($this->filteredOrders($filters), 1, $maximumRows));
+    }
+
+    /**
+     * @param  OrderFulfillmentFilters  $filters
      * @return Builder<Order>
      */
     private function filteredOrders(array $filters): Builder

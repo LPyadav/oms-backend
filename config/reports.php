@@ -27,4 +27,5 @@ return [
     'max_days' => $maximumDays,
     'default_per_page' => $positiveInteger('PAGINATION_REPORTS_DEFAULT_PER_PAGE', 25, $maximumPerPage),
     'max_per_page' => $maximumPerPage,
+    'export_max_rows' => 1_000,
 ];

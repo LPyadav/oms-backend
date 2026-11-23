@@ -19,6 +19,7 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        RateLimiter::for('order-export', $this->orderExportLimit(...));
         RateLimiter::for('api', $this->apiLimit(...));
         RateLimiter::for('login', fn (Request $request): array => $this->publicAuthLimits($request, 'login'));
         RateLimiter::for('password-link', fn (Request $request): array => $this->publicAuthLimits($request, 'password_link'));
@@ -113,6 +114,16 @@ final class ApiRateLimitServiceProvider extends ServiceProvider
         );
 
         return Limit::perMinute($attempts, $windowMinutes)->by($key);
+    }
+
+    private function orderExportLimit(Request $request): Limit
+    {
+        $account = $request->user('sanctum');
+        if (! $account instanceof User) {
+            return Limit::none();
+        }
+
+        return Limit::perMinute(5)->by((string) $account->id);
     }
 
     private function clientIp(Request $request): string

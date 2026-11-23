@@ -50,6 +50,7 @@ return [
     ],
 
     'orders' => [
+        'export_limit' => 'More than :limit orders match. Narrow the filters and try again.',
         'assigned' => 'Order assignment updated successfully.',
         'assignees_retrieved' => 'Assignable employees retrieved successfully.',
         'note_added' => 'Order note added successfully.',

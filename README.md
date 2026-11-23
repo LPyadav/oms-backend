@@ -180,6 +180,7 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | Method | Endpoint | Operation |
 | --- | --- | --- |
 | GET | /api/orders | List orders visible to the caller |
+| GET | /api/orders/export | Export matching orders as CSV |
 | POST | /api/orders | Create a draft order |
 | POST | /api/orders/preview | Calculate pricing for a new or editable order |
 | GET | /api/orders/assignees | List active employees for order assignment |
@@ -375,6 +376,15 @@ limit is 50 entries. Set `ORDERS_SYSTEM_ACTIVITY_LIMIT` to a value from
 1 to 200. Notes, status history, and assignment history are still
 available in their respective fields.
 
+### Order CSV export
+
+Use `GET /api/orders/export` with an authenticated account that has `orders.view.any`.
+The CSV uses the Orders list search, filters and sort across all matching pages.
+Limit results to 1,000 orders or narrow the filters after a 422 response.
+Each account can request five exports per minute. The UTF-8 download contains order
+summaries and decimal totals with a currency column. Customer email, phone, address,
+and employee email and roles are omitted.
+
 ### Order notifications
 
 The current assignee receives an in-app notification when an order is assigned
@@ -507,6 +517,20 @@ tax, and final amount including tax. These amounts retain the pricing and tax
 applied at order completion, including order-level tax overrides. Report totals
 use the same filtered snapshot as the rows and are grouped by saved currency.
 Aggregate minor-unit amounts are decimal integer strings.
+
+### Report CSV downloads
+
+Use `GET /api/reports/orders/export` or `GET /api/reports/sales-tax/export`
+with the same permissions and filters as the corresponding JSON report.
+Each UTF-8 CSV contains one row per matching order across all pages in
+report order, with decimal amounts alongside their currency codes. The
+Order & Fulfillment CSV uses the business order date. The Sales & Tax CSV
+shows completion time in UTC and the saved pricing and tax amounts.
+
+An empty result returns the CSV headers. If more than 1,000 orders match,
+the API returns a `422` response asking the caller to narrow the filters.
+The Orders and report downloads share a limit of five exports per account
+per minute.
 
 ### Report history beyond 366 days
 
