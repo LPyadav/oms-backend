@@ -7,7 +7,7 @@ can use the same Sanctum Bearer token API.
 ## Prerequisites
 
 - PHP 8.3 or later with the Laravel extensions and `pdo_mysql`
-- Composer 2 and ZIP support through the PHP `zip` extension or an archive tool
+- Composer 2.8 or later and ZIP support through the PHP `zip` extension or an archive tool
 - MySQL running locally, for example through Laragon on port `3306`
 - `pdo_sqlite` to run the automated tests
 
@@ -88,6 +88,9 @@ rebuild it on deployment. [Laravel configuration caching](https://laravel.com/do
 
 ### 4. Apply migrations and start the API
 
+For assessment review, continue with the [assessment demo dataset](#assessment-demo-dataset)
+after completing steps 1 through 3.
+
 ```powershell
 php artisan migrate
 php artisan migrate:status
@@ -132,7 +135,8 @@ across Admin, Manager and Staff, plus 100 customers, 50 products, and 504 orders
 with mixed statuses, priorities, taxes, discounts, assignment, notes and
 history. The seeder uses the domain services so stock and audit records follow
 the same rules as interactive orders. The demo account command prints generated
-passwords in your own terminal for newly created accounts.
+passwords in your own terminal for newly created accounts. Save the credentials
+printed on the first run for the roles you want to review.
 
 ```powershell
 php artisan migrate
@@ -682,14 +686,19 @@ protect the token in transit.
 
 ### Self-service password recovery
 
-Set `AUTH_PASSWORD_RESET_FRONTEND_URL` to the Vue origin in backend `.env`.
-The default `MAIL_MAILER=log` writes the reset link to
-`storage/logs/laravel.log` with the sample logging configuration.
-For inbox delivery, configure SMTP. Run a queue worker that serves
-`default`, for example `php artisan queue:work --queue=notifications,default`.
+1. Start the Vue app and set `AUTH_PASSWORD_RESET_FRONTEND_URL` in backend
+   `.env` to its origin. The default is `http://127.0.0.1:5173`.
+2. From the backend directory, run
+   `php artisan queue:work --queue=notifications,default`.
+3. Select **Forgot password?** on the Vue sign-in page and enter an active demo
+   account email. With the default `MAIL_MAILER=log`, Laravel writes the
+   reset link to backend `storage/logs/laravel.log` after the worker processes
+   the request.
+4. Open the link, set a new password, then sign in again. A successful reset
+   revokes earlier sessions for the account.
 
-See the [password recovery setup guide](docs/password-recovery.md) for
-local testing, SMTP settings, and worker restart steps.
+The [password recovery setup guide](docs/password-recovery.md) covers SMTP
+inbox delivery, worker restart steps, and troubleshooting.
 
 | Method | Endpoint | Behavior |
 | --- | --- | --- |
