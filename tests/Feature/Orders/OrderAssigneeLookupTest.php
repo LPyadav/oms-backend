@@ -35,6 +35,8 @@ final class OrderAssigneeLookupTest extends TestCase
         $staff = User::factory()->create(['name' => 'Dispatch Avery'])->assignRole('staff', $customRole);
         $coordinator = User::factory()->create(['name' => 'Dispatch Cameron'])->assignRole($customRole);
         $unassigned = User::factory()->create(['name' => 'Dispatch Drew']);
+        User::factory()->create(['name' => 'Dispatch Admin'])->assignRole('admin');
+        User::factory()->create(['name' => 'Dispatch Admin Staff'])->assignRole('admin', 'staff');
         User::factory()->create(['name' => 'Dispatch Inactive', 'is_active' => false])->assignRole('staff');
         User::factory()->create(['name' => 'Outside Team', 'email' => 'dispatch@example.test']);
 
@@ -79,6 +81,7 @@ final class OrderAssigneeLookupTest extends TestCase
         $first = User::factory()->create(['name' => 'Same Name']);
         $second = User::factory()->create(['name' => 'Same Name']);
         $alpha = User::factory()->create(['name' => 'Alpha Porter']);
+        User::factory()->create(['name' => 'Alpha Admin'])->assignRole('admin');
 
         $this->authenticate($manager);
 

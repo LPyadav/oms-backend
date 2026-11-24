@@ -84,7 +84,7 @@ return [
         'amount_out_of_range' => 'The calculated order amounts exceed the supported range.',
         'customer_unavailable' => 'Select an active customer.',
         'product_unavailable' => 'Select an active product.',
-        'assignee_unavailable' => 'Select an active employee.',
+        'assignee_unavailable' => 'Select an active employee without the Admin role.',
         'not_editable' => 'Only draft and pending orders can be edited.',
         'not_deletable' => 'Only draft, pending, and cancelled orders can be deleted.',
         'version_limit' => 'This order cannot accept another version.',

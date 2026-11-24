@@ -78,6 +78,7 @@ final readonly class OrderService
     public function __construct(
         private OrderPolicy $policy,
         private OrderReader $reader,
+        private OrderAssigneeLookup $assignees,
         private OrderPricingService $pricing,
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
@@ -168,7 +169,7 @@ final readonly class OrderService
             $note = $data['note'] ?? null;
 
             if ($assigneeId !== null) {
-                $this->ensureActiveAssignee($assigneeId);
+                $this->assignees->lockAssignable($assigneeId);
             }
 
             $customer = $this->activeCustomer($data['customer_id']);
@@ -403,14 +404,6 @@ final readonly class OrderService
         }
 
         return $customer;
-    }
-
-    private function ensureActiveAssignee(int $assigneeId): void
-    {
-        $assignee = User::query()->where('is_active', true)->sharedLock()->find($assigneeId);
-        if ($assignee === null) {
-            throw ValidationException::withMessages(['assignee_id' => Lang::string('api.orders.assignee_unavailable')]);
-        }
     }
 
     private function ensureVersion(Order $order, int $expectedVersion): void

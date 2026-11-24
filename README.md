@@ -219,7 +219,7 @@ Use HTTPS for deployed clients and keep passwords and Bearer tokens out of logs.
 | GET | /api/orders/export | Export matching orders as CSV |
 | POST | /api/orders | Create a draft order |
 | POST | /api/orders/preview | Calculate pricing for a new or editable order |
-| GET | /api/orders/assignees | List active employees for order assignment |
+| GET | /api/orders/assignees | List active employees without the Admin role for order assignment |
 | GET | /api/orders/{order} | Read order details, notes, history, and system activity |
 | PATCH | /api/orders/{order} | Edit a draft or pending order |
 | DELETE | /api/orders/{order} | Soft-delete an eligible order |

@@ -1016,6 +1016,7 @@ paths:
       description: >-
         Requires orders.view.any and orders.create. A non-null assignee requires orders.assign, and a non-null note requires
         orders.notes.create.any. An explicit item tax rate or a non-null order tax rate also requires orders.update.
+        An initial assignee must be an active user without the Admin role.
         A request with order_tax_rate_basis_points must omit item tax overrides.
         The server snapshots active catalog products, derives all amounts, and saves the draft, lines, optional note, audit,
         and idempotency record atomically. The key is scoped to the authenticated user and stays bound to the original order.
@@ -1155,7 +1156,7 @@ paths:
       summary: List assignable employees
       description: >-
         Requires an active user with orders.view.any and orders.assign.
-        Returns the ID, name, email, and role names of active users.
+        Returns the ID, name, email, and role names of active users without the Admin role.
         Results are ordered by case-insensitive name and then ID.
         Order creation and assignment revalidate the new assignee during the write transaction.
       parameters:
@@ -1365,8 +1366,8 @@ paths:
       operationId: assignOrder
       summary: Assign or unassign an order
       description: >-
-        Requires orders.view.any and orders.assign. The assignee must be active
-        when changing the assignment. Send null to unassign. Completed and cancelled
+        Requires orders.view.any and orders.assign. A new assignee must be an active
+        user without the Admin role. Send null to unassign. Completed and cancelled
         orders reject assignment changes. An unchanged assignment preserves the
         order version and writes no additional audit entry.
       requestBody:
