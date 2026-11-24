@@ -28,6 +28,7 @@ final readonly class OrderActivityService
         private AdminUserWriteLock $writeLock,
         private AuditLogWriter $auditLogWriter,
         private OrderReader $orders,
+        private OrderAssigneeLookup $assignees,
         private OrderWriteTransaction $writeTransaction,
         private OrderNotificationOutbox $notificationOutbox,
     ) {}
@@ -69,7 +70,7 @@ final readonly class OrderActivityService
                 ]);
             }
 
-            $assignee = $assigneeId === null ? null : $this->activeAssignee($assigneeId);
+            $assignee = $assigneeId === null ? null : $this->assignees->lockAssignable($assigneeId);
             $beforeValues = [
                 'assignee_id' => $order->assignee_id,
                 'version' => $order->version,
@@ -143,17 +144,5 @@ final readonly class OrderActivityService
 
             return $note->load('author:id,name');
         }, OrderWriteOperation::Activity);
-    }
-
-    private function activeAssignee(int $assigneeId): User
-    {
-        $assignee = User::query()->where('is_active', true)->sharedLock()->find($assigneeId);
-        if ($assignee === null) {
-            throw ValidationException::withMessages([
-                'assignee_id' => Lang::string('api.orders.assignee_unavailable'),
-            ]);
-        }
-
-        return $assignee;
     }
 }

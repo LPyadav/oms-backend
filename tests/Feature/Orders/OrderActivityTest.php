@@ -180,6 +180,27 @@ final class OrderActivityTest extends TestCase
         $this->assertDatabaseCount('audit_logs', 2);
     }
 
+    public function test_reassignment_rejects_an_admin_without_changing_the_order(): void
+    {
+        $admin = User::factory()->create()->assignRole('admin');
+        $staff = User::factory()->create()->assignRole('staff');
+        $order = Order::factory()->create([
+            'created_by' => $admin->id,
+            'assignee_id' => $staff->id,
+        ]);
+
+        $this->useBearer($admin->createToken('order activity test')->plainTextToken);
+        $this->postJson('/api/orders/'.$order->id.'/assign', [
+            'assignee_id' => $admin->id,
+            'expected_version' => 1,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('assignee_id', 'errors.fields');
+
+        self::assertSame($staff->id, $order->refresh()->assignee_id);
+        self::assertSame(1, $order->version);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
     public function test_assignment_rejects_inactive_employees_and_terminal_orders(): void
     {
         $manager = User::factory()->create()->assignRole('manager');

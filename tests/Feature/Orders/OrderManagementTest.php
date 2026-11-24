@@ -111,6 +111,25 @@ final class OrderManagementTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
+    public function test_create_rejects_an_admin_assignee_even_with_an_employee_role(): void
+    {
+        $manager = User::factory()->create()->assignRole('manager');
+        $admin = User::factory()->create()->assignRole('admin', 'staff');
+        $customer = Customer::factory()->create();
+        $product = Product::factory()->create();
+
+        $this->useBearerFor($manager);
+        $this->postJson(self::ENDPOINT, [
+            ...self::payload($customer, [['product_id' => $product->id, 'quantity' => 1]]),
+            'assignee_id' => $admin->id,
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('assignee_id', 'errors.fields');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_creation_keys', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+    }
+
     public function test_create_time_note_requires_its_own_permission(): void
     {
         $actor = User::factory()->create()->givePermissionTo('orders.view.any', 'orders.create');
