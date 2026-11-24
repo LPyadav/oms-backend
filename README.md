@@ -144,6 +144,38 @@ php artisan serve --host=127.0.0.1 --port=8000
 Run `php artisan queue:work --queue=notifications,default` and
 `php artisan schedule:work` in separate terminals for notification delivery.
 
+### Larger local demo dataset
+
+With a local MySQL database configured in `.env` and migrations applied, run:
+
+```powershell
+php artisan oms:seed-demo-data
+```
+
+The defaults create 500 demo users, 100 customers, 50 products and 504 orders.
+Orders include assigned Staff, items, notes, stock movements, status history,
+audit records and queued notifications. After a successful run, the console
+prints the shared password and one example login for each of Admin, Manager,
+and Staff. Set `OMS_DEMO_PASSWORD` before the first run to choose the password,
+and use the same value when you rerun against that database.
+
+Run the command again to reuse the same demo records. Use `--users`,
+`--customers`, `--products` and `--orders` to change the target counts. Lower
+targets preserve existing records. The command uses a dedicated email and SKU
+prefix and is available only in the local environment.
+
+To grow the dataset to 50,000 demo orders, run:
+
+```powershell
+php artisan oms:seed-demo-data --orders=50000
+```
+
+The count is the total demo order target. The command commits order batches
+separately and skips completed orders when you rerun it. Orders still pass
+through the normal pricing, stock, audit and notification workflows, so allow
+time for the larger run. `OMS_DEMO_ORDER_BATCH_SIZE` defaults to 100 orders
+per batch.
+
 ## API endpoints
 
 Successful and failed JSON responses use the same envelope with `success`,
